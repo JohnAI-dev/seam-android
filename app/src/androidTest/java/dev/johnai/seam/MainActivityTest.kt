@@ -1,23 +1,30 @@
 package dev.johnai.seam
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.rule.GrantPermissionRule
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 /** Launches the real app on an emulator. */
 @RunWith(AndroidJUnit4::class)
 class MainActivityTest {
+    // Otherwise the notification permission dialog pauses the screen under test.
+    @get:Rule
+    val notifications: GrantPermissionRule = GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS)
+
     private val context get() = ApplicationProvider.getApplicationContext<android.content.Context>()
 
     // Same link as protocol/vectors.json "pair_uri".

@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."
 CURRENT="setup"
 trap 'echo "::error title=Test failed::Step \"$CURRENT\" failed"' ERR
 CURRENT="unit tests"; echo "== $CURRENT"
-gradle --no-daemon --console=plain :app:testDebugUnitTest
+gradle --no-daemon --console=plain :app:testDebugUnitTest || { python3 scripts/report_test_failures.py; exit 1; }
 CURRENT="build"; echo "== $CURRENT"
 gradle --no-daemon --console=plain :app:assembleDebug
 CURRENT="lint"; echo "== $CURRENT"
