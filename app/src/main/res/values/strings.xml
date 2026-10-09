@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Seam</string>
+    <string name="tagline">Your phone and your computer, as one.</string>
+    <string name="not_paired">Not paired with a computer yet</string>
+    <string name="paired_with">Paired with %1$s</string>
+    <string name="how_to_pair">On your computer, open Seam and press “Pair phone”. Then scan the QR code with this phone\'s camera.</string>
+    <string name="pair_started">Paired with %1$s. Connecting…</string>
+    <string name="pair_invalid">That isn\'t a valid Seam pairing link (%1$s).</string>
+    <string name="status_connecting">Connecting to your computer…</string>
+    <string name="status_connected">Connected to %1$s</string>
+    <string name="status_rejected">The computer refused the connection. Pair again.</string>
+    <string name="status_rejected_detail">The computer refused the connection: %1$s</string>
+    <string name="notification_access_steps">To show your notifications on your computer, Seam needs notification access. If Android says the setting is restricted: open Settings → Apps → Seam → ⋮ → Allow restricted settings, then try again.</string>
+    <string name="allow_notifications">Allow notification access</string>
+    <string name="keep_running">Keep Seam running in the background</string>
+    <string name="paste_link">Paste pairing link</string>
+    <string name="clipboard_empty">Copy the pairing link on your computer first.</string>
+    <string name="forget">Forget this computer</string>
+</resources>

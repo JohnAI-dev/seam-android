@@ -1,0 +1,54 @@
+name: Release
+# Builds a signed APK on every change to main and publishes it as a GitHub release.
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['.github/**', '**.md']
+  workflow_call:
+    outputs:
+      url:
+        value: ${{ jobs.apk.outputs.url }}
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      url: ${{ steps.rel.outputs.url }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.1.0"
+      - name: Build APK
+        run: |
+          # Version code = number of commits, so every build can update the previous one.
+          export SEAM_BUILD_NUMBER=$(git rev-list --count HEAD)
+          echo "SEAM_BUILD_NUMBER=$SEAM_BUILD_NUMBER" >> "$GITHUB_ENV"
+          gradle --no-daemon --console=plain :app:assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk "Seam-0.1.$SEAM_BUILD_NUMBER.apk"
+      - id: rel
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(git rev-parse HEAD)
+          tag="v0.1.$SEAM_BUILD_NUMBER"
+          url=$(gh release create "$tag" "Seam-0.1.$SEAM_BUILD_NUMBER.apk" --target "$sha" \
+                --title "Seam for Android 0.1.$SEAM_BUILD_NUMBER" \
+                --notes "Install: open this page on your phone, download the .apk and open it (allow installing from your browser when asked).
+
+          Then: open Seam on your computer → Pair phone → scan the QR code with your phone's camera. Give Seam notification access when asked (if Android says the setting is restricted: Settings → Apps → Seam → ⋮ → Allow restricted settings). No USB debugging needed.")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Released: $url"

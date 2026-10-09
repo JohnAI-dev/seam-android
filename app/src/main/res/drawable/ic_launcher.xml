@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Seam icon: rounded blue square joined by a light diagonal seam. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#3F64E0"
+        android:pathData="M30,6h48a24,24 0,0 1,24 24v48a24,24 0,0 1,-24 24h-48a24,24 0,0 1,-24 -24v-48a24,24 0,0 1,24 -24z" />
+    <path android:strokeColor="#F0F4FF" android:strokeWidth="7" android:strokeLineCap="round"
+        android:pathData="M22,22L86,86" />
+</vector>

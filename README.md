@@ -1,0 +1,38 @@
+# Seam for Android
+
+The phone half of Seam. Pairs with Seam on your computer by scanning a QR code and sends
+your notifications and battery status over Wi-Fi. **No USB debugging, no cable.**
+
+## How it works
+
+- Seam on the computer shows a QR code with a `seam://pair?...` link. The phone's camera
+  opens it in this app, which stores the computer's address, certificate fingerprint and a
+  one-time key.
+- A foreground service keeps an encrypted connection (TLS 1.3, certificate pinned via the QR
+  code, HMAC-authenticated) to the computer, and reconnects automatically.
+- A notification listener forwards notifications; battery changes are sent as they happen.
+
+Protocol: `protocol/PROTOCOL.md`, with test vectors shared with
+[seam-desktop](https://github.com/JohnAI-dev/seam-desktop) so both sides stay compatible.
+
+Plain Kotlin on the Android framework: no third-party runtime libraries.
+
+## Install
+
+Open the [latest release](../../releases/latest) on your phone, download the `.apk` and open it.
+Builds are signed with a development key in this repo (`app/seam-dev.keystore`) so updates
+install over each other. Replace it with a private key before publishing to Google Play.
+
+## How it gets built (autonomous)
+
+1. **Open an issue** (as the repo owner) describing a bug or feature.
+2. **Grok engineer** writes the change; `scripts/test.sh` runs JVM unit tests (including the
+   shared protocol vectors), a full build and Android lint.
+3. **Grok reviewer** approves or rejects; up to 3 attempts with feedback.
+4. A PR is opened; **CI re-runs the tests and launches the app on an Android emulator**
+   (`app/src/androidTest`), then it is **auto-merged**.
+5. **Release**: a signed APK is published to GitHub Releases and the issue is closed with a link.
+
+The agent can't modify `.github/`, `scripts/` or `protocol/`; tests run without access to secrets.
+Issues from other people are ignored until the owner adds the `agent` label; `no-agent` keeps
+the agent off an issue.
