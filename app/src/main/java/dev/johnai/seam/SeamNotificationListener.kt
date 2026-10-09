@@ -1,16 +1,23 @@
 package dev.johnai.seam
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.content.pm.ApplicationInfo
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 
 /** Forwards the phone's notifications to the paired computer. */
+@SuppressLint("StaticFieldLeak")
 class SeamNotificationListener : NotificationListenerService() {
 
     override fun onListenerConnected() {
+        instance = this
         // Make sure the link is running whenever we're allowed to read notifications.
         LinkHub.startService(this)
+    }
+
+    override fun onListenerDisconnected() {
+        if (instance === this) instance = null
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
@@ -56,6 +63,18 @@ class SeamNotificationListener : NotificationListenerService() {
                 .loadLabel(packageManager).toString()
         } catch (e: Exception) {
             sbn.packageName
+        }
+    }
+
+    companion object {
+        /** Connected listener instance; dismiss requests are ignored while this is null. */
+        @field:SuppressLint("StaticFieldLeak")
+        @Volatile
+        private var instance: SeamNotificationListener? = null
+
+        /** Cancel the notification the computer dismissed. No-op if the listener isn't connected. */
+        fun dismiss(key: String) {
+            instance?.cancelNotification(key)
         }
     }
 }
