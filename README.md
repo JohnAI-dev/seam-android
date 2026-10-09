@@ -20,8 +20,10 @@ Plain Kotlin on the Android framework: no third-party runtime libraries.
 ## Install
 
 Open the [latest release](../../releases/latest) on your phone, download the `.apk` and open it.
-Builds are signed with a development key in this repo (`app/seam-dev.keystore`) so updates
-install over each other. Replace it with a private key before publishing to Google Play.
+Releases are signed with a private key stored only as the GitHub secrets
+`ANDROID_KEYSTORE_B64` (the keystore, base64) and `ANDROID_KEYSTORE_PASSWORD`, so only this
+repo's release pipeline can produce APKs that update an installed Seam. Keep a backup of the
+keystore and password: without them, existing installs can't be updated.
 
 ## How it gets built (autonomous)
 

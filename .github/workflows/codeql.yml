@@ -1,0 +1,40 @@
+name: CodeQL
+# Static security analysis. Free for public repositories; skipped while the repo is private.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 4 * * 1"
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+jobs:
+  analyze:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ["java-kotlin", "actions"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        if: matrix.language == 'java-kotlin'
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+        if: matrix.language == 'java-kotlin'
+        with:
+          gradle-version: "9.1.0"
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.language == 'java-kotlin' && 'manual' || 'none' }}
+      - name: Build
+        if: matrix.language == 'java-kotlin'
+        run: gradle --no-daemon --console=plain :app:assembleDebug
+      - uses: github/codeql-action/analyze@v3

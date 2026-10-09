@@ -18,24 +18,25 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    // Development signing key, kept in the repo so every build can update the last one.
-    // Replace with a private key (stored as a GitHub secret) before publishing to Play.
+    // Release builds are signed with a private key that exists only as GitHub secrets
+    // (decoded to a file by the release workflow). Debug builds, used by tests and the
+    // agent, use Android's standard debug key.
+    val releaseKeystore = System.getenv("SEAM_KEYSTORE_FILE")
     signingConfigs {
-        create("seamDev") {
-            storeFile = file("seam-dev.keystore")
-            storePassword = "seamdev"
-            keyAlias = "seam"
-            keyPassword = "seamdev"
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("SEAM_KEYSTORE_PASSWORD")
+                keyAlias = "seam"
+                keyPassword = System.getenv("SEAM_KEYSTORE_PASSWORD")
+            }
         }
     }
 
     buildTypes {
-        getByName("debug") {
-            signingConfig = signingConfigs.getByName("seamDev")
-        }
         getByName("release") {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("seamDev")
+            if (releaseKeystore != null) signingConfig = signingConfigs.getByName("release")
         }
     }
 

@@ -32,13 +32,29 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "9.1.0"
+      - name: Load the release signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ] || [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "::error title=No signing key::Set the ANDROID_KEYSTORE_B64 and ANDROID_KEYSTORE_PASSWORD secrets (see README)"
+            exit 1
+          fi
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/seam-release.keystore"
+          echo "SEAM_KEYSTORE_FILE=$RUNNER_TEMP/seam-release.keystore" >> "$GITHUB_ENV"
+          echo "::add-mask::$KEYSTORE_PASSWORD"
+          echo "SEAM_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
       - name: Build APK
         run: |
           # Version code = number of commits, so every build can update the previous one.
           export SEAM_BUILD_NUMBER=$(git rev-list --count HEAD)
           echo "SEAM_BUILD_NUMBER=$SEAM_BUILD_NUMBER" >> "$GITHUB_ENV"
           gradle --no-daemon --console=plain :app:assembleRelease
-          cp app/build/outputs/apk/release/app-release.apk "Seam-0.1.$SEAM_BUILD_NUMBER.apk"
+          apk=app/build/outputs/apk/release/app-release.apk
+          [ -f "$apk" ] || { echo "::error::release APK was not signed"; exit 1; }
+          cp "$apk" "Seam-0.1.$SEAM_BUILD_NUMBER.apk"
+          rm -f "$SEAM_KEYSTORE_FILE"
       - id: rel
         env:
           GH_TOKEN: ${{ github.token }}
