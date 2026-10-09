@@ -38,7 +38,8 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         store = PairingStore(this)
         setContentView(buildLayout())
-        handlePairingIntent(intent)
+        // Only on a fresh start: a recreated screen (e.g. after rotation) must not pair again.
+        if (savedInstanceState == null) handlePairingIntent(intent)
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
@@ -68,8 +69,6 @@ class MainActivity : Activity() {
         val data = intent?.data?.toString() ?: return
         if (!data.startsWith("seam://")) return
         pairWith(data)
-        // Don't re-pair if the screen is recreated.
-        intent.data = null
     }
 
     private fun pairWith(link: String) {
