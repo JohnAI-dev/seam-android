@@ -51,6 +51,14 @@ object Protocol {
         null
     }
 
+    /** Id from a dismiss frame, or null for any other frame or a dismiss with no id. */
+    fun dismissId(frame: String): String? {
+        val msg = parse(frame) ?: return null
+        if (msg.optString("type") != "dismiss") return null
+        if (msg.isNull("id")) return null
+        return msg.optString("id").takeIf { it.isNotEmpty() }
+    }
+
     private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 }
 

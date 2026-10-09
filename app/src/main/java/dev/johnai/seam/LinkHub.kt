@@ -24,10 +24,16 @@ object LinkHub {
         if (client != null) return
         val store = PairingStore(context)
         val pairing = store.pairing ?: return
-        client = LinkClient(pairing, store.deviceId, store.deviceName) { state, detail ->
-            update(Status(state, detail))
-            if (state == LinkClient.State.CONNECTED) onConnected?.invoke()
-        }.also { it.start() }
+        client = LinkClient(
+            pairing,
+            store.deviceId,
+            store.deviceName,
+            onState = { state, detail ->
+                update(Status(state, detail))
+                if (state == LinkClient.State.CONNECTED) onConnected?.invoke()
+            },
+            onDismiss = { id -> SeamNotificationListener.dismiss(id) },
+        ).also { it.start() }
     }
 
     @Synchronized

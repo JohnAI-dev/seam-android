@@ -86,6 +86,18 @@ class ProtocolTest {
     }
 
     @Test
+    fun dismissIdFromDismissFrameOnly() {
+        assertEquals("0|com.example|1|tag|100", Protocol.dismissId("""{"type":"dismiss","id":"0|com.example|1|tag|100"}"""))
+        assertNull(Protocol.dismissId("""{"type":"ping"}"""))
+        assertNull(Protocol.dismissId("""{"type":"notification","id":"kept"}"""))
+        assertNull(Protocol.dismissId("""{"type":"dismiss"}"""))
+        assertNull(Protocol.dismissId("""{"type":"dismiss","id":""}"""))
+        assertNull(Protocol.dismissId("""{"type":"dismiss","id":null}"""))
+        assertNull(Protocol.dismissId("""{"id":"x"}"""))
+        assertNull(Protocol.dismissId("not json"))
+    }
+
+    @Test
     fun pinnedTrustManagerRejectsMissingCertificate() {
         try {
             PinnedTrustManager("00".repeat(32)).checkServerTrusted(emptyArray(), "ECDHE")
