@@ -25,6 +25,13 @@ Releases are signed with a private key stored only as the GitHub secrets
 repo's release pipeline can produce APKs that update an installed Seam. Keep a backup of the
 keystore and password: without them, existing installs can't be updated.
 
+## Updates
+
+Seam checks [GitHub Releases](../../releases/latest) every 6 hours, downloads a newer APK,
+checks it is signed with the same key, and installs it. The first update asks you to allow
+Seam to install updates (and to confirm once); after that, Android 12+ lets Seam update
+itself without asking.
+
 ## How it gets built (autonomous)
 
 1. **Open an issue** (as the repo owner) describing a bug or feature.

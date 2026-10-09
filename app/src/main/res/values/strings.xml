@@ -17,4 +17,9 @@
     <string name="paste_link">Paste pairing link</string>
     <string name="clipboard_empty">Copy the pairing link on your computer first.</string>
     <string name="forget">Forget this computer</string>
+    <string name="updates_channel">App updates</string>
+    <string name="update_ready">A new version of Seam is ready. Tap to install.</string>
+    <string name="update_needs_permission">Seam %1$s is available. Tap to allow Seam to update itself.</string>
+    <string name="allow_updates">Allow automatic updates</string>
+    <string name="version_line">Seam %1$s</string>
 </resources>

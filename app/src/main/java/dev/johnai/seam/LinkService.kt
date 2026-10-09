@@ -41,6 +41,7 @@ class LinkService : Service() {
                 ?.let { reportBattery(it, force = true) }
         }
         registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        startUpdateChecks()
         LinkHub.addListener(statusListener)
         LinkHub.start(this)
     }
@@ -54,7 +55,26 @@ class LinkService : Service() {
         return START_STICKY
     }
 
+    @Volatile private var updateThread: Thread? = null
+
+    /** Look for a new Seam version shortly after start and then every 6 hours. */
+    private fun startUpdateChecks() {
+        if (updateThread != null) return
+        updateThread = Thread({
+            try {
+                Thread.sleep(60_000)
+                while (true) {
+                    Updater.checkAndInstall(this)
+                    Thread.sleep(6 * 60 * 60 * 1000L)
+                }
+            } catch (_: InterruptedException) {
+            }
+        }, "seam-updates").apply { isDaemon = true; start() }
+    }
+
     override fun onDestroy() {
+        updateThread?.interrupt()
+        updateThread = null
         LinkHub.removeListener(statusListener)
         unregisterReceiver(batteryReceiver)
         LinkHub.onConnected = null

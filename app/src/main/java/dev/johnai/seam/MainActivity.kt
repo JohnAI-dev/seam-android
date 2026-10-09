@@ -31,6 +31,7 @@ class MainActivity : Activity() {
     private lateinit var notificationAccess: Button
     private lateinit var background: Button
     private lateinit var forget: Button
+    private lateinit var allowUpdates: Button
     private lateinit var steps: TextView
     private val statusListener: (LinkHub.Status) -> Unit = { render() }
 
@@ -108,6 +109,8 @@ class MainActivity : Activity() {
         background.visibility =
             if (pm.isIgnoringBatteryOptimizations(packageName)) View.GONE else View.VISIBLE
         forget.visibility = if (pairing == null) View.GONE else View.VISIBLE
+        allowUpdates.visibility =
+            if (packageManager.canRequestPackageInstalls()) View.GONE else View.VISIBLE
     }
 
     private fun hasNotificationAccess(): Boolean {
@@ -175,6 +178,19 @@ class MainActivity : Activity() {
             render()
         }
         column.addView(forget)
+        allowUpdates = button(R.string.allow_updates) {
+            startActivity(
+                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
+            )
+        }
+        column.addView(allowUpdates)
+        column.addView(TextView(this).apply {
+            tag = "version"
+            @Suppress("DEPRECATION")
+            text = getString(R.string.version_line, packageManager.getPackageInfo(packageName, 0).versionName)
+            alpha = 0.6f
+            setPadding(0, dp(24), 0, 0)
+        })
         return ScrollView(this).apply { addView(column) }
     }
 
