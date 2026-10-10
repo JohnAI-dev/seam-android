@@ -79,6 +79,35 @@ class ProtocolTest {
     }
 
     @Test
+    fun clipboardHasTypeTextAndTruncates() {
+        val c = JSONObject(Protocol.clipboard("copied"))
+        assertEquals("clipboard", c.getString("type"))
+        assertEquals("copied", c.getString("text"))
+
+        val limit = 100_000
+        assertEquals(limit, Protocol.CLIPBOARD_MAX_CHARS)
+        assertEquals(
+            "y".repeat(limit),
+            JSONObject(Protocol.clipboard("y".repeat(limit))).getString("text")
+        )
+
+        val over = "x".repeat(limit + 1)
+        val sent = JSONObject(Protocol.clipboard(over))
+        assertEquals("clipboard", sent.getString("type"))
+        assertEquals(limit, sent.getString("text").length)
+        assertEquals("x".repeat(limit), sent.getString("text"))
+
+        val incoming = JSONObject().put("type", "clipboard").put("text", over).toString()
+        assertEquals("x".repeat(limit), Protocol.clipboardText(incoming))
+        assertEquals("", Protocol.clipboardText(JSONObject().put("type", "clipboard").put("text", "").toString()))
+        assertNull(Protocol.clipboardText(JSONObject().put("type", "clipboard").put("text", 1).toString()))
+        assertNull(Protocol.clipboardText(JSONObject().put("type", "clipboard").toString()))
+        assertNull(Protocol.clipboardText(JSONObject().put("type", "clipboard").put("text", JSONObject.NULL).toString()))
+        assertNull(Protocol.clipboardText(JSONObject().put("type", "ping").put("text", "no").toString()))
+        assertNull(Protocol.clipboardText("not json"))
+    }
+
+    @Test
     fun parseToleratesGarbageAndUnknownTypes() {
         assertNull(Protocol.parse("not json"))
         assertNull(Protocol.parse("""{"no_type":1}"""))

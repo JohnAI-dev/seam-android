@@ -16,6 +16,10 @@
     <string name="keep_running">Keep Seam running in the background</string>
     <string name="paste_link">Paste pairing link</string>
     <string name="clipboard_empty">Copy the pairing link on your computer first.</string>
+    <string name="send_clipboard">Send clipboard to computer</string>
+    <string name="clipboard_sent">Sent to %1$s</string>
+    <string name="clipboard_not_connected">Not connected</string>
+    <string name="clipboard_nothing">Nothing on the clipboard.</string>
     <string name="forget">Forget this computer</string>
     <string name="updates_channel">App updates</string>
     <string name="update_ready">A new version of Seam is ready. Tap to install.</string>
