@@ -216,13 +216,15 @@ class MainActivity : Activity() {
             if (packageManager.canRequestPackageInstalls()) View.GONE else View.VISIBLE
     }
 
-    /** Phone state and call log. Contacts is optional and only fills in a name. */
+    /** Phone state, call log, and declining. Contacts is optional and only fills in a name. */
     private fun hasCallPermissions(): Boolean {
         val phone = checkSelfPermission(Manifest.permission.READ_PHONE_STATE) ==
             PackageManager.PERMISSION_GRANTED
         val log = checkSelfPermission(Manifest.permission.READ_CALL_LOG) ==
             PackageManager.PERMISSION_GRANTED
-        return phone && log
+        val decline = checkSelfPermission(Manifest.permission.ANSWER_PHONE_CALLS) ==
+            PackageManager.PERMISSION_GRANTED
+        return phone && log && decline
     }
 
     private fun hasNotificationAccess(): Boolean {
@@ -278,6 +280,7 @@ class MainActivity : Activity() {
                     Manifest.permission.READ_PHONE_STATE,
                     Manifest.permission.READ_CALL_LOG,
                     Manifest.permission.READ_CONTACTS,
+                    Manifest.permission.ANSWER_PHONE_CALLS,
                 ),
                 REQUEST_CALLS,
             )

@@ -17,8 +17,15 @@ import android.os.IBinder
 class LinkService : Service() {
     private var lastBattery: Pair<Int, Boolean>? = null
     private val statusListener: (LinkHub.Status) -> Unit = { updateNotification(it) }
+    private var callActions: CallActions? = null
     private val callMonitor = CallMonitor()
-    private val startCalls: () -> Unit = { callMonitor.start(this) }
+    private val onCallAction: (String) -> Unit = { action -> callActions?.handle(action) }
+    private val startCalls: () -> Unit = {
+        callActions?.let { actions ->
+            callMonitor.onLineState = { state -> actions.onLineState(state) }
+        }
+        callMonitor.start(this)
+    }
 
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) = reportBattery(intent, force = false)
@@ -45,12 +52,14 @@ class LinkService : Service() {
         }
         registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         startUpdateChecks()
+        callActions = CallActions(this)
+        LinkHub.onCallAction = onCallAction
+        LinkHub.onStartCalls = startCalls
         LinkHub.addListener(statusListener)
         LinkHub.start(this)
         // A permission grant does not redeliver onStartCommand; the activity calls this.
-        LinkHub.onStartCalls = startCalls
         // Main looper: register call listening synchronously and read the current state.
-        callMonitor.start(this)
+        startCalls()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -58,9 +67,10 @@ class LinkService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        LinkHub.start(this)
+        LinkHub.onCallAction = onCallAction
         LinkHub.onStartCalls = startCalls
-        callMonitor.start(this)
+        LinkHub.start(this)
+        startCalls()
         return START_STICKY
     }
 
@@ -83,7 +93,12 @@ class LinkService : Service() {
 
     override fun onDestroy() {
         if (LinkHub.onStartCalls === startCalls) LinkHub.onStartCalls = null
+        if (LinkHub.onCallAction === onCallAction) LinkHub.onCallAction = null
+        // Unmute a silenced ringer before the service is gone. Never leave it muted.
+        callActions?.release()
+        callMonitor.onLineState = null
         callMonitor.stop()
+        callActions = null
         updateThread?.interrupt()
         updateThread = null
         LinkHub.removeListener(statusListener)

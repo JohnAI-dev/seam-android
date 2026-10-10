@@ -67,6 +67,7 @@ object LinkHub {
                 } catch (_: Exception) {
                 }
             },
+            onCallAction = { action -> performCallAction(action) },
             onFile = { line -> inbox.handle(line) },
         ).also { it.start() }
     }
@@ -93,6 +94,20 @@ object LinkHub {
     fun startCallMonitor() {
         try {
             onStartCalls?.invoke()
+        } catch (_: Exception) {
+        }
+    }
+
+    /**
+     * The running link service registers this to decline or silence a call when the
+     * computer sends call_action. Null while the service is down.
+     */
+    @Volatile var onCallAction: ((String) -> Unit)? = null
+
+    /** Decline or silence if the link service is running. */
+    fun performCallAction(action: String) {
+        try {
+            onCallAction?.invoke(action)
         } catch (_: Exception) {
         }
     }
