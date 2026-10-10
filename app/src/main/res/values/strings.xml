@@ -26,4 +26,9 @@
     <string name="update_needs_permission">Seam %1$s is available. Tap to allow Seam to update itself.</string>
     <string name="allow_updates">Allow automatic updates</string>
     <string name="version_line">Seam %1$s</string>
+    <string name="find_channel">Find my phone</string>
+    <string name="find_channel_description">Rings this phone when your computer asks you to find it</string>
+    <string name="find_title">Find my phone</string>
+    <string name="find_text">Your computer is ringing this phone.</string>
+    <string name="found_it">Found it</string>
 </resources>

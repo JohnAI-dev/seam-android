@@ -4,6 +4,7 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 import java.io.File
@@ -239,6 +240,44 @@ class ProtocolTest {
         assertNull(Protocol.replyRequest(JSONObject().put("id", "k").put("text", "hi").toString()))
         assertNull(Protocol.replyRequest("not json"))
         assertNull(Protocol.replyRequest(""))
+    }
+
+    @Test
+    fun ringAndRingStop() {
+        assertEquals(60_000L, Protocol.RING_DURATION_MS)
+
+        assertTrue(Protocol.isRing("""{"type":"ring"}"""))
+        assertTrue(Protocol.isRing("""{"type":"ring","v":1}"""))
+        assertFalse(Protocol.isRing("""{"type":"ring_stop"}"""))
+        assertFalse(Protocol.isRing("""{"type":"ring_stop_now"}"""))
+        assertFalse(Protocol.isRing("""{"type":"Ring"}"""))
+        assertFalse(Protocol.isRing("""{"type":"ping"}"""))
+        assertFalse(Protocol.isRing("""{"type":"dismiss","id":"x"}"""))
+        assertFalse(Protocol.isRing("""{"type":"notification","id":"k"}"""))
+        assertFalse(Protocol.isRing("""{"type":""}"""))
+        assertFalse(Protocol.isRing("""{"type":1}"""))
+        assertFalse(Protocol.isRing("""{"type":null}"""))
+        assertFalse(Protocol.isRing("""{"no_type":1}"""))
+        assertFalse(Protocol.isRing("not json"))
+        assertFalse(Protocol.isRing(""))
+        assertNull(Protocol.dismissId("""{"type":"ring"}"""))
+        assertNull(Protocol.clipboardText("""{"type":"ring"}"""))
+        assertNull(Protocol.replyRequest("""{"type":"ring"}"""))
+
+        assertTrue(Protocol.isRingStop("""{"type":"ring_stop"}"""))
+        assertTrue(Protocol.isRingStop("""{"type":"ring_stop","extra":true}"""))
+        assertFalse(Protocol.isRingStop("""{"type":"ring"}"""))
+        assertFalse(Protocol.isRingStop("""{"type":"ring-stop"}"""))
+        assertFalse(Protocol.isRingStop("""{"type":"RING_STOP"}"""))
+        assertFalse(Protocol.isRingStop("""{"type":"ping"}"""))
+        assertFalse(Protocol.isRingStop("""{"type":"dismiss","id":"x"}"""))
+        assertFalse(Protocol.isRingStop("""{"type":1}"""))
+        assertFalse(Protocol.isRingStop("""{"type":null}"""))
+        assertFalse(Protocol.isRingStop("""{"no_type":1}"""))
+        assertFalse(Protocol.isRingStop("not json"))
+        assertFalse(Protocol.isRingStop(""))
+        assertNull(Protocol.dismissId("""{"type":"ring_stop"}"""))
+        assertNull(Protocol.replyRequest("""{"type":"ring_stop","id":"k","text":"hi"}"""))
     }
 
     @Test

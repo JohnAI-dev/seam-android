@@ -24,6 +24,7 @@ class LinkService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        PhoneFinder.onProcessStart(this)
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL, "Connection to computer", NotificationManager.IMPORTANCE_LOW).apply {
