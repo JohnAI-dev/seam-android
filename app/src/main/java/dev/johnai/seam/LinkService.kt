@@ -1,5 +1,6 @@
 package dev.johnai.seam
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -12,6 +13,8 @@ import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.os.BatteryManager
 import android.os.IBinder
+import java.io.InputStream
+import java.util.concurrent.Executors
 
 /** Foreground service that keeps the connection to the computer alive in the background. */
 class LinkService : Service() {
@@ -27,12 +30,28 @@ class LinkService : Service() {
         callMonitor.start(this)
     }
 
+    /**
+     * File uploads, one at a time. Owned here so onDestroy can shut it down and
+     * [FileOutbox] can say "Not sent" for anything still queued. Not a hand-rolled worker.
+     */
+    private val fileSends = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "seam-file-send").apply { isDaemon = true }
+    }
+    private var fileOutbox: FileOutbox? = null
+    private val onOutgoingFile: (String) -> Boolean = { line ->
+        fileOutbox?.deliver(line) == true
+    }
+    private val onCancelOutgoing: (String) -> Unit = { transfer ->
+        fileOutbox?.cancel(transfer)
+    }
+
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) = reportBattery(intent, force = false)
     }
 
     override fun onCreate() {
         super.onCreate()
+        fileOutbox = FileOutbox(this, fileSends)
         PhoneFinder.onProcessStart(this)
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
@@ -55,6 +74,8 @@ class LinkService : Service() {
         callActions = CallActions(this)
         LinkHub.onCallAction = onCallAction
         LinkHub.onStartCalls = startCalls
+        LinkHub.onOutgoingFile = onOutgoingFile
+        LinkHub.onCancelOutgoingFile = onCancelOutgoing
         LinkHub.addListener(statusListener)
         LinkHub.start(this)
         // A permission grant does not redeliver onStartCommand; the activity calls this.
@@ -63,15 +84,113 @@ class LinkService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == FileOutbox.ACTION_SEND_FILES) {
+            acceptSharedFiles(intent)
+        }
         if (PairingStore(this).pairing == null) {
             stopSelf()
             return START_NOT_STICKY
         }
         LinkHub.onCallAction = onCallAction
         LinkHub.onStartCalls = startCalls
+        LinkHub.onOutgoingFile = onOutgoingFile
+        LinkHub.onCancelOutgoingFile = onCancelOutgoing
         LinkHub.start(this)
         startCalls()
         return START_STICKY
+    }
+
+    /**
+     * Open every stream before this method returns. The FLAG_GRANT_READ_URI_PERMISSION
+     * on the startService intent is dropped when onStartCommand returns, and the activity
+     * grant is already gone after finish(). Chunks are streamed later from these streams.
+     * openFileDescriptor is not used: virtual providers (Drive, Gmail) have no fd.
+     */
+    private fun acceptSharedFiles(intent: Intent) {
+        val described = FileOutbox.sharedFiles(intent)
+        val outbox = fileOutbox
+        if (outbox == null || PairingStore(this).pairing == null || fileSends.isShutdown) {
+            described.forEach { outbox?.notifyNotSent(it.name) }
+            return
+        }
+        val opened = ArrayList<OpenedShare>(described.size)
+        var handedOff = false
+        try {
+            for (file in described) {
+                openGranted(file, outbox)?.let { opened.add(it) }
+            }
+            outbox.enqueueOpened(opened)
+            handedOff = true
+        } finally {
+            if (!handedOff) {
+                for (share in opened) {
+                    try {
+                        share.stream.close()
+                    } catch (_: Exception) {
+                    }
+                    try {
+                        outbox.notifyNotSent(share.name)
+                    } catch (_: Exception) {
+                    }
+                }
+            }
+        }
+    }
+
+    /** Null when this file will not be sent. Caller must close a non-null stream. */
+    private fun openGranted(file: SharedFile, outbox: FileOutbox): OpenedShare? {
+        if (!FileSend.mayOpenSharedUri(file.uri.scheme, file.uri.authority, packageName)) {
+            outbox.notifyNotSent(file.name)
+            return null
+        }
+        val opened = openForUpload(file)
+        if (opened == null) {
+            outbox.notifyNotSent(file.name)
+            return null
+        }
+        return OpenedShare(file.name, opened.second, file.mime, opened.first)
+    }
+
+    /**
+     * Opens while the startService URI grant is still valid. openInputStream covers ordinary
+     * files; openTypedAssetFileDescriptor covers virtual documents that have no fd.
+     * The returned stream owns any descriptor. Nothing is read here.
+     */
+    @SuppressLint("Recycle")
+    private fun openForUpload(file: SharedFile): Pair<InputStream, Long>? {
+        val plain = try {
+            contentResolver.openInputStream(file.uri)
+        } catch (_: Exception) {
+            null
+        }
+        if (plain != null) return plain to file.size
+        val mimes = ArrayList<String>(2)
+        mimes.add("*/*")
+        val specific = file.mime
+        if (!specific.isNullOrEmpty() && specific != "*/*") mimes.add(specific)
+        for (mime in mimes) {
+            val afd = try {
+                contentResolver.openTypedAssetFileDescriptor(file.uri, mime, null)
+            } catch (_: Exception) {
+                null
+            } ?: continue
+            val stream = try {
+                HeldStream(afd.createInputStream(), afd)
+            } catch (_: Exception) {
+                try {
+                    afd.close()
+                } catch (_: Exception) {
+                }
+                continue
+            }
+            val size = when {
+                file.size >= 0L -> file.size
+                afd.length >= 0L -> afd.length
+                else -> file.size
+            }
+            return stream to size
+        }
+        return null
     }
 
     @Volatile private var updateThread: Thread? = null
@@ -92,6 +211,18 @@ class LinkService : Service() {
     }
 
     override fun onDestroy() {
+        val dropped = try {
+            fileSends.shutdownNow()
+        } catch (_: Exception) {
+            emptyList()
+        }
+        try {
+            fileOutbox?.onExecutorStopped(dropped)
+        } catch (_: Exception) {
+        }
+        fileOutbox = null
+        if (LinkHub.onOutgoingFile === onOutgoingFile) LinkHub.onOutgoingFile = null
+        if (LinkHub.onCancelOutgoingFile === onCancelOutgoing) LinkHub.onCancelOutgoingFile = null
         if (LinkHub.onStartCalls === startCalls) LinkHub.onStartCalls = null
         if (LinkHub.onCallAction === onCallAction) LinkHub.onCallAction = null
         // Unmute a silenced ringer before the service is gone. Never leave it muted.
@@ -149,5 +280,26 @@ class LinkService : Service() {
     companion object {
         const val CHANNEL = "link"
         const val NOTIFICATION_ID = 1
+    }
+}
+
+/** Closes [extra] (an AssetFileDescriptor) after the provider stream. Double-close is ignored. */
+private class HeldStream(
+    private val inner: InputStream,
+    private val extra: AutoCloseable?,
+) : InputStream() {
+    override fun read(): Int = inner.read()
+
+    override fun read(b: ByteArray, off: Int, len: Int): Int = inner.read(b, off, len)
+
+    override fun close() {
+        try {
+            inner.close()
+        } catch (_: Exception) {
+        }
+        try {
+            extra?.close()
+        } catch (_: Exception) {
+        }
     }
 }

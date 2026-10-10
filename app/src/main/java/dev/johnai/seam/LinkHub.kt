@@ -68,7 +68,14 @@ object LinkHub {
                 }
             },
             onCallAction = { action -> performCallAction(action) },
-            onFile = { line -> inbox.handle(line) },
+            onFile = { line ->
+                val outgoing = try {
+                    onOutgoingFile?.invoke(line) == true
+                } catch (_: Exception) {
+                    false
+                }
+                if (outgoing) null else inbox.handle(line)
+            },
         ).also { it.start() }
     }
 
@@ -104,6 +111,15 @@ object LinkHub {
      */
     @Volatile var onCallAction: ((String) -> Unit)? = null
 
+    /**
+     * Link service: true if [line] is a reply to an upload this phone started
+     * (file_accept, file_reject, file_result, file_cancel). Incoming offers stay false.
+     */
+    @Volatile var onOutgoingFile: ((String) -> Boolean)? = null
+
+    /** Notification Cancel: stop the upload with this transfer id (sends file_cancel). */
+    @Volatile var onCancelOutgoingFile: ((String) -> Unit)? = null
+
     /** Decline or silence if the link service is running. */
     fun performCallAction(action: String) {
         try {
@@ -112,9 +128,26 @@ object LinkHub {
         }
     }
 
+    fun cancelOutgoingFile(transfer: String) {
+        try {
+            onCancelOutgoingFile?.invoke(transfer)
+        } catch (_: Exception) {
+        }
+    }
+
     fun send(line: String) {
         client?.send(line)
     }
+
+    /** Id of the live session, or null when the link is down. Capture this for [sendOn]. */
+    fun currentSessionId(): Long? = client?.currentSessionId()
+
+    /**
+     * Write [frame] only on the session that was current when the upload offered the file.
+     * Returns false and writes nothing if that session has ended or been replaced.
+     */
+    fun sendOn(sessionId: Long, frame: String): Boolean =
+        client?.sendOn(sessionId, frame) == true
 
     /** Queue clipboard text if connected. Returns the computer name, or null if not connected. */
     fun sendClipboard(context: Context, text: String): String? {

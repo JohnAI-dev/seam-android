@@ -28,6 +28,13 @@
     <!-- Calls are optional; Seam still runs on devices without a phone radio. -->
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
 
+    <!-- Package visibility: so a share can tell these providers are already readable. -->
+    <queries>
+        <provider android:authorities="com.android.contacts" />
+        <provider android:authorities="call_log" />
+        <provider android:authorities="telephony" />
+    </queries>
+
     <application
         android:name=".SeamApp"
         android:allowBackup="false"
@@ -53,7 +60,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Share to Seam: send text from another app to the paired computer. -->
+        <!-- Share to Seam: send text or files from another app to the paired computer. -->
         <activity
             android:name=".ShareActivity"
             android:exported="true"
@@ -64,6 +71,16 @@
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
 
@@ -97,6 +114,10 @@
 
         <receiver
             android:name=".FoundItReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".FileSendCancelReceiver"
             android:exported="false" />
 
         <receiver
