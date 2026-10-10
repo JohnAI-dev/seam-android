@@ -34,6 +34,8 @@ class MainActivity : Activity() {
     private lateinit var background: Button
     private lateinit var forget: Button
     private lateinit var allowUpdates: Button
+    private lateinit var updateText: TextView
+    private val updateListener: (Updater.Status) -> Unit = { runOnUiThread { renderUpdate() } }
     private lateinit var steps: TextView
     private val statusListener: (LinkHub.Status) -> Unit = { render() }
 
@@ -59,6 +61,15 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         LinkHub.addListener(statusListener)
+        Updater.addListener(updateListener)
+        renderUpdate()
+        // An update downloaded in the background may be waiting for Android's confirmation.
+        val confirm = Updater.takePendingConfirm()
+        if (confirm != null) {
+            try { startActivity(confirm) } catch (_: Exception) {}
+        } else if (System.currentTimeMillis() - Updater.status.checkedAt > 15 * 60 * 1000L) {
+            checkForUpdates()
+        }
         LinkHub.startService(this)
         if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) ==
             PackageManager.PERMISSION_GRANTED
@@ -68,7 +79,32 @@ class MainActivity : Activity() {
         render()
     }
 
+    private fun checkForUpdates() {
+        Thread({ Updater.checkAndInstall(this) }, "seam-update-check").start()
+    }
+
+    private fun renderUpdate() {
+        if (!::updateText.isInitialized) return
+        val s = Updater.status
+        updateText.text = when (s.state) {
+            Updater.State.IDLE -> ""
+            Updater.State.CHECKING -> getString(R.string.update_checking)
+            Updater.State.UP_TO_DATE -> getString(R.string.update_up_to_date)
+            Updater.State.DOWNLOADING -> getString(R.string.update_downloading, s.detail)
+            Updater.State.INSTALLING -> getString(R.string.update_installing, s.detail)
+            Updater.State.WAITING_FOR_CONFIRM -> getString(R.string.update_confirm)
+            Updater.State.NEEDS_PERMISSION -> getString(R.string.update_permission, s.detail)
+            Updater.State.FAILED -> getString(R.string.update_failed, s.detail)
+        }
+        updateText.visibility = if (updateText.text.isEmpty()) View.GONE else View.VISIBLE
+        if (::allowUpdates.isInitialized) {
+            allowUpdates.visibility =
+                if (packageManager.canRequestPackageInstalls()) View.GONE else View.VISIBLE
+        }
+    }
+
     override fun onPause() {
+        Updater.removeListener(updateListener)
         LinkHub.removeListener(statusListener)
         super.onPause()
     }
@@ -272,6 +308,20 @@ class MainActivity : Activity() {
             )
         }
         column.addView(allowUpdates)
+        column.addView(button(R.string.update_check) {
+            val confirm = Updater.takePendingConfirm()
+            if (confirm != null) {
+                try { startActivity(confirm) } catch (_: Exception) {}
+            } else {
+                checkForUpdates()
+            }
+        })
+        updateText = TextView(this).apply {
+            tag = "update"
+            visibility = View.GONE
+            setPadding(0, dp(8), 0, 0)
+        }
+        column.addView(updateText)
         column.addView(TextView(this).apply {
             tag = "version"
             @Suppress("DEPRECATION")

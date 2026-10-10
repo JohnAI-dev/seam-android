@@ -41,4 +41,12 @@
     <string name="pair_confirm_replaces">This replaces the pairing with %1$s.</string>
     <string name="pair_confirm_yes">Pair</string>
     <string name="pair_cancelled">Pairing cancelled.</string>
+    <string name="update_check">Check for updates</string>
+    <string name="update_checking">Checking for updates…</string>
+    <string name="update_up_to_date">Seam is up to date.</string>
+    <string name="update_downloading">Downloading Seam %1$s…</string>
+    <string name="update_installing">Installing Seam %1$s…</string>
+    <string name="update_confirm">Seam is ready to update. Tap \"Check for updates\" to install.</string>
+    <string name="update_permission">Seam %1$s is available. Tap \"Allow automatic updates\" first.</string>
+    <string name="update_failed">Update check failed: %1$s</string>
 </resources>
