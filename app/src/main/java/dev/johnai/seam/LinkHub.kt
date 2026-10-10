@@ -83,6 +83,20 @@ object LinkHub {
     /** Called right after (re)connecting, e.g. to send the current battery level. */
     @Volatile var onConnected: (() -> Unit)? = null
 
+    /**
+     * The running link service registers this so a call-permission grant can start
+     * reporting without a process restart. Null while the service is down.
+     */
+    @Volatile var onStartCalls: (() -> Unit)? = null
+
+    /** Start call reporting if the link service is already running. */
+    fun startCallMonitor() {
+        try {
+            onStartCalls?.invoke()
+        } catch (_: Exception) {
+        }
+    }
+
     fun send(line: String) {
         client?.send(line)
     }

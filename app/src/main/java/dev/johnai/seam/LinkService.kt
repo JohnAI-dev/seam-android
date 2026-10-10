@@ -17,6 +17,8 @@ import android.os.IBinder
 class LinkService : Service() {
     private var lastBattery: Pair<Int, Boolean>? = null
     private val statusListener: (LinkHub.Status) -> Unit = { updateNotification(it) }
+    private val callMonitor = CallMonitor()
+    private val startCalls: () -> Unit = { callMonitor.start(this) }
 
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) = reportBattery(intent, force = false)
@@ -45,6 +47,10 @@ class LinkService : Service() {
         startUpdateChecks()
         LinkHub.addListener(statusListener)
         LinkHub.start(this)
+        // A permission grant does not redeliver onStartCommand; the activity calls this.
+        LinkHub.onStartCalls = startCalls
+        // Main looper: register call listening synchronously and read the current state.
+        callMonitor.start(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -53,6 +59,8 @@ class LinkService : Service() {
             return START_NOT_STICKY
         }
         LinkHub.start(this)
+        LinkHub.onStartCalls = startCalls
+        callMonitor.start(this)
         return START_STICKY
     }
 
@@ -74,6 +82,8 @@ class LinkService : Service() {
     }
 
     override fun onDestroy() {
+        if (LinkHub.onStartCalls === startCalls) LinkHub.onStartCalls = null
+        callMonitor.stop()
         updateThread?.interrupt()
         updateThread = null
         LinkHub.removeListener(statusListener)

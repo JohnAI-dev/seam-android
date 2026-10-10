@@ -30,6 +30,7 @@ class MainActivity : Activity() {
     private lateinit var notice: TextView
     private lateinit var paired: TextView
     private lateinit var notificationAccess: Button
+    private lateinit var calls: Button
     private lateinit var background: Button
     private lateinit var forget: Button
     private lateinit var allowUpdates: Button
@@ -59,12 +60,35 @@ class MainActivity : Activity() {
         super.onResume()
         LinkHub.addListener(statusListener)
         LinkHub.startService(this)
+        if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            LinkHub.startCallMonitor()
+        }
         render()
     }
 
     override fun onPause() {
         LinkHub.removeListener(statusListener)
         super.onPause()
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQUEST_CALLS) return
+        // The permission dialog does not redeliver onStartCommand to a running service.
+        if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            LinkHub.startCallMonitor()
+            LinkHub.startService(this)
+        }
+        render()
     }
 
     private fun handlePairingIntent(intent: Intent?) {
@@ -147,12 +171,22 @@ class MainActivity : Activity() {
         val hasAccess = hasNotificationAccess()
         notificationAccess.visibility = if (hasAccess) View.GONE else View.VISIBLE
         steps.visibility = if (hasAccess) View.GONE else View.VISIBLE
+        calls.visibility = if (hasCallPermissions()) View.GONE else View.VISIBLE
         val pm = getSystemService(PowerManager::class.java)
         background.visibility =
             if (pm.isIgnoringBatteryOptimizations(packageName)) View.GONE else View.VISIBLE
         forget.visibility = if (pairing == null) View.GONE else View.VISIBLE
         allowUpdates.visibility =
             if (packageManager.canRequestPackageInstalls()) View.GONE else View.VISIBLE
+    }
+
+    /** Phone state and call log. Contacts is optional and only fills in a name. */
+    private fun hasCallPermissions(): Boolean {
+        val phone = checkSelfPermission(Manifest.permission.READ_PHONE_STATE) ==
+            PackageManager.PERMISSION_GRANTED
+        val log = checkSelfPermission(Manifest.permission.READ_CALL_LOG) ==
+            PackageManager.PERMISSION_GRANTED
+        return phone && log
     }
 
     private fun hasNotificationAccess(): Boolean {
@@ -202,6 +236,17 @@ class MainActivity : Activity() {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
         column.addView(notificationAccess)
+        calls = button(R.string.show_calls) {
+            requestPermissions(
+                arrayOf(
+                    Manifest.permission.READ_PHONE_STATE,
+                    Manifest.permission.READ_CALL_LOG,
+                    Manifest.permission.READ_CONTACTS,
+                ),
+                REQUEST_CALLS,
+            )
+        }
+        column.addView(calls)
         background = button(R.string.keep_running) {
             @Suppress("BatteryLife")
             startActivity(
@@ -247,4 +292,8 @@ class MainActivity : Activity() {
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
+    private companion object {
+        const val REQUEST_CALLS = 2
+    }
 }
