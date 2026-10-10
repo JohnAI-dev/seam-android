@@ -15,6 +15,8 @@ import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.CopyOnWriteArraySet
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Self-update from GitHub Releases. Checks the latest release, downloads a newer APK,
@@ -26,6 +28,35 @@ object Updater {
     const val LATEST_URL = "https://api.github.com/repos/JohnAI-dev/seam-android/releases/latest"
     private const val CHANNEL = "updates"
     private const val NOTIFICATION_ID = 2
+
+    /** What the updater is doing, for the main screen. */
+    enum class State { IDLE, CHECKING, UP_TO_DATE, DOWNLOADING, NEEDS_PERMISSION, WAITING_FOR_CONFIRM, INSTALLING, FAILED }
+
+    data class Status(val state: State, val detail: String = "", val checkedAt: Long = 0L)
+
+    @Volatile
+    var status = Status(State.IDLE)
+        private set
+    private val listeners = CopyOnWriteArraySet<(Status) -> Unit>()
+    private val running = AtomicBoolean(false)
+
+    /** Android's "Install this update?" screen, kept so the app can show it when opened. */
+    @Volatile
+    private var pendingConfirm: Intent? = null
+
+    fun addListener(l: (Status) -> Unit) { listeners.add(l) }
+    fun removeListener(l: (Status) -> Unit) { listeners.remove(l) }
+    fun takePendingConfirm(): Intent? = pendingConfirm.also { pendingConfirm = null }
+
+    internal fun setStatus(s: Status) {
+        status = s
+        listeners.forEach { it(s) }
+    }
+
+    internal fun awaitConfirm(confirm: Intent) {
+        pendingConfirm = confirm
+        setStatus(status.copy(state = State.WAITING_FOR_CONFIRM, detail = ""))
+    }
 
     /** A release that can be installed. */
     data class Release(val versionCode: Long, val versionName: String, val apkUrl: String, val size: Long)
@@ -55,27 +86,49 @@ object Updater {
 
     fun isNewer(release: Release, currentVersionCode: Long) = release.versionCode > currentVersionCode
 
-    /** Check and, if there's a newer version, download and install it. Call off the main thread. */
-    fun checkAndInstall(context: Context) {
+    /**
+     * Check and, if there's a newer version, download and install it. Call off the main thread.
+     * Returns false if a check is already running.
+     */
+    fun checkAndInstall(context: Context): Boolean {
+        if (!running.compareAndSet(false, true)) return false
         val ctx = context.applicationContext
+        val now = System.currentTimeMillis()
         try {
-            val release = parseLatest(httpGet(LATEST_URL)) ?: return
-            if (!isNewer(release, currentVersionCode(ctx))) return
+            if (status.state == State.WAITING_FOR_CONFIRM && pendingConfirm != null) return true
+            setStatus(Status(State.CHECKING, checkedAt = now))
+            val release = parseLatest(httpGet(LATEST_URL))
+            if (release == null) {
+                setStatus(Status(State.FAILED, "no release found", now))
+                return true
+            }
+            if (!isNewer(release, currentVersionCode(ctx))) {
+                setStatus(Status(State.UP_TO_DATE, checkedAt = now))
+                return true
+            }
             if (!ctx.packageManager.canRequestPackageInstalls()) {
+                setStatus(Status(State.NEEDS_PERMISSION, release.versionName, now))
                 notify(ctx, ctx.getString(R.string.update_needs_permission, release.versionName),
                     Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                         android.net.Uri.parse("package:${ctx.packageName}")))
-                return
+                return true
             }
+            setStatus(Status(State.DOWNLOADING, release.versionName, now))
             val apk = download(ctx, release)
             if (!sameSigner(ctx, apk)) {
                 apk.delete()
-                return
+                setStatus(Status(State.FAILED, "the download isn't signed by Seam", now))
+                return true
             }
+            setStatus(Status(State.INSTALLING, release.versionName, now))
             install(ctx, apk)
         } catch (e: Exception) {
-            // Offline, rate limited, etc. We'll try again at the next check.
+            // Offline, rate limited, etc. Shown on the main screen; we try again at the next check.
+            setStatus(Status(State.FAILED, e.message ?: e.javaClass.simpleName, now))
+        } finally {
+            running.set(false)
         }
+        return true
     }
 
     private fun httpGet(url: String): String {
@@ -170,11 +223,17 @@ class InstallResultReceiver : BroadcastReceiver() {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                 @Suppress("DEPRECATION")
                 val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT) ?: return
-                // Apps can't open screens from the background, so ask via a notification.
+                // Apps can't open screens from the background: ask via a notification, and show
+                // Android's install screen the next time Seam is opened.
+                Updater.awaitConfirm(confirm)
                 Updater.notify(context, context.getString(R.string.update_ready), confirm)
             }
             // Success: Android restarts Seam on the new version (see BootReceiver).
-            else -> {}
+            PackageInstaller.STATUS_SUCCESS -> {}
+            else -> {
+                val why = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "install failed"
+                Updater.setStatus(Updater.status.copy(state = Updater.State.FAILED, detail = why))
+            }
         }
     }
 }

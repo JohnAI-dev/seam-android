@@ -22,7 +22,7 @@ class FoundActivity : Activity() {
         super.onCreate(savedInstanceState)
         actionBar?.hide()
         showOverLockScreen()
-        setContentView(buildLayout())
+        setContentView(buildLayout().apply { padForSystemBars() })
     }
 
     override fun onNewIntent(intent: Intent) {

@@ -66,7 +66,7 @@ class LinkService : Service() {
 
     @Volatile private var updateThread: Thread? = null
 
-    /** Look for a new Seam version shortly after start and then every 6 hours. */
+    /** Look for a new Seam version shortly after start and then every hour. */
     private fun startUpdateChecks() {
         if (updateThread != null) return
         updateThread = Thread({
@@ -74,7 +74,7 @@ class LinkService : Service() {
                 Thread.sleep(60_000)
                 while (true) {
                     Updater.checkAndInstall(this)
-                    Thread.sleep(6 * 60 * 60 * 1000L)
+                    Thread.sleep(60 * 60 * 1000L)
                 }
             } catch (_: InterruptedException) {
             }
