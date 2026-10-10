@@ -72,6 +72,14 @@ object Protocol {
         JSONObject().put("type", "call").put("state", state)
             .put("number", number).put("name", name).toString()
 
+    /** decline or silence from a call_action frame; unknown actions are ignored. */
+    fun callAction(frame: String): String? {
+        val msg = parse(frame) ?: return null
+        if (msg.opt("type") != "call_action") return null
+        val action = msg.opt("action") as? String ?: return null
+        return action.takeIf { it == "decline" || it == "silence" }
+    }
+
     /** Clipboard frame; text is truncated to CLIPBOARD_MAX_CHARS. */
     fun clipboard(text: String): String =
         JSONObject().put("type", "clipboard").put("text", text.take(CLIPBOARD_MAX_CHARS)).toString()

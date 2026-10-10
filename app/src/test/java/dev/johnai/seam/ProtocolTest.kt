@@ -300,6 +300,44 @@ class ProtocolTest {
     }
 
     @Test
+    fun callActionDeclineSilenceAndUnknown() {
+        assertEquals("decline", Protocol.callAction("""{"type":"call_action","action":"decline"}"""))
+        assertEquals("silence", Protocol.callAction("""{"type":"call_action","action":"silence"}"""))
+        assertEquals(
+            "decline",
+            Protocol.callAction("""{"type":"call_action","action":"decline","extra":1}"""),
+        )
+        assertEquals(
+            "silence",
+            Protocol.callAction("""{"type":"call_action","extra":true,"action":"silence"}"""),
+        )
+
+        assertNull(Protocol.callAction("""{"type":"call_action","action":"answer"}"""))
+        assertNull(Protocol.callAction("""{"type":"call_action","action":"Decline"}"""))
+        assertNull(Protocol.callAction("""{"type":"call_action","action":"SILENCE"}"""))
+        assertNull(Protocol.callAction("""{"type":"call_action","action":""}"""))
+        assertNull(Protocol.callAction("""{"type":"call_action","action":" decline"}"""))
+        assertNull(Protocol.callAction("""{"type":"call_action"}"""))
+        assertNull(Protocol.callAction("""{"type":"call_action","action":null}"""))
+        assertNull(Protocol.callAction("""{"type":"call_action","action":1}"""))
+        assertNull(Protocol.callAction("""{"type":"call_action","action":true}"""))
+        assertNull(Protocol.callAction("""{"type":"ping"}"""))
+        assertNull(Protocol.callAction("""{"type":"call","state":"ringing","number":"","name":""}"""))
+        assertNull(Protocol.callAction("""{"type":"ring"}"""))
+        assertNull(Protocol.callAction("not json"))
+        assertNull(Protocol.callAction(""))
+
+        val decline = """{"type":"call_action","action":"decline","id":"k"}"""
+        assertNull(Protocol.dismissId(decline))
+        assertFalse(Protocol.isRing(decline))
+        assertFalse(Protocol.isRingStop(decline))
+        assertNull(Protocol.clipboardText("""{"type":"call_action","action":"silence","text":"x"}"""))
+        assertNull(
+            Protocol.replyRequest("""{"type":"call_action","action":"silence","id":"k","text":"hi"}"""),
+        )
+    }
+
+    @Test
     fun fileTransferFrames() {
         val id = "ab".repeat(16)
         assertEquals(32, id.length)

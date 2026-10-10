@@ -35,6 +35,13 @@ import java.util.concurrent.RejectedExecutionException
 class CallMonitor {
     private val session = CallSession()
     private val main = Handler(Looper.getMainLooper())
+
+    /**
+     * Each observed line state, including repeats that do not produce a call frame,
+     * so a silenced ringer can unmute when the call leaves ringing. May run off the main thread.
+     */
+    @Volatile var onLineState: ((CallLineState) -> Unit)? = null
+
     private var gate = CallStartupGate()
     private var listener: PhoneStateListener? = null
     private var telephony: TelephonyManager? = null
@@ -159,8 +166,18 @@ class CallMonitor {
     }
 
     private fun handle(snap: CallSnapshot) {
+        notifyLine(snap.state)
         val update = session.onState(snap.state, snap.number, lookupName(snap.number)) ?: return
         LinkHub.send(Protocol.call(update.state, update.number, update.name))
+    }
+
+    private fun notifyLine(state: CallLineState) {
+        val listener = onLineState ?: return
+        if (!registered) return
+        try {
+            listener.invoke(state)
+        } catch (_: Exception) {
+        }
     }
 
     /**
