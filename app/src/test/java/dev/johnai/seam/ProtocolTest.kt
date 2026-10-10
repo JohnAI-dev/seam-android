@@ -418,4 +418,30 @@ class ProtocolTest {
             assertFalse(e.message.isNullOrEmpty())
         }
     }
+
+    @Test
+    fun onlyLocalNetworkAddressesArePairable() {
+        for (h in listOf("10.0.0.5", "172.16.0.1", "172.31.255.254", "192.168.1.10", "169.254.3.4",
+                         "100.101.102.103", "127.0.0.1", "fd12:3456::1", "fe80::1%wlan0", "[fe80::1]", "::1",
+                         "johns-mac.local")) {
+            assertTrue(h, PairingInfo.isLocalAddress(h))
+        }
+        for (h in listOf("8.8.8.8", "172.32.0.1", "192.169.0.1", "100.128.0.1", "1.2.3.4", "256.1.1.1",
+                         "2001:db8::1", "example.com", "evil.example.local.com", "", "10.0.0", "10.0.0.5.6",
+                         ".local", "a b.local")) {
+            assertFalse(h, PairingInfo.isLocalAddress(h))
+        }
+    }
+
+    @Test
+    fun pairingLinksToInternetAddressesAreRefused() {
+        val link = "seam://pair?v=1&host=203.0.113.7&port=47100&fp=" + "ab".repeat(32) +
+            "&key=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&name=x"
+        try {
+            PairingInfo.parse(link)
+            fail("must refuse a public address")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message!!.contains("local network"))
+        }
+    }
 }

@@ -295,6 +295,35 @@ class PairingInfo(
     val key: ByteArray get() = Base64.getUrlDecoder().decode(keyB64)
 
     companion object {
+        /**
+         * True for addresses that can only be on the local network: private IPv4 (10/8, 172.16/12,
+         * 192.168/16), carrier-grade NAT and VPNs like Tailscale (100.64/10), link-local, loopback,
+         * IPv6 unique-local (fc00::/7) and link-local (fe80::/10), and `.local` mDNS names.
+         * Literal parsing only: never resolves names.
+         */
+        fun isLocalAddress(host: String): Boolean {
+            val h = host.trim().removePrefix("[").removeSuffix("]").lowercase()
+            if (h.endsWith(".local") && h.length > 6 && h.all { it.isLetterOrDigit() || it == '-' || it == '.' }) return true
+            val parts = h.split(".")
+            if (parts.size == 4 && parts.all { it.isNotEmpty() && it.length <= 3 && it.all(Char::isDigit) }) {
+                val b = parts.map { it.toInt() }
+                if (b.any { it > 255 }) return false
+                return b[0] == 10 ||
+                    (b[0] == 172 && b[1] in 16..31) ||
+                    (b[0] == 192 && b[1] == 168) ||
+                    (b[0] == 169 && b[1] == 254) ||
+                    (b[0] == 100 && b[1] in 64..127) ||
+                    b[0] == 127
+            }
+            if (h.contains(":") && h.all { it.isDigit() || it in 'a'..'f' || it == ':' || it == '%' || it.isLetter() }) {
+                val addr = h.substringBefore('%')
+                if (addr == "::1") return true
+                val first = addr.substringBefore(':').ifEmpty { return false }.toIntOrNull(16) ?: return false
+                return (first and 0xfe00) == 0xfc00 || (first and 0xffc0) == 0xfe80
+            }
+            return false
+        }
+
         /** Parse and validate a seam://pair link. Throws IllegalArgumentException if invalid. */
         fun parse(uri: String): PairingInfo {
             val query = uri.trim().removePrefix("seam://pair?")
@@ -307,6 +336,9 @@ class PairingInfo(
             require(params["v"] == Protocol.VERSION.toString()) { "Unsupported pairing link version" }
             val hosts = params["host"].orEmpty().split(",").map { it.trim() }.filter { it.isNotEmpty() }
             require(hosts.isNotEmpty()) { "Missing host" }
+            // The computer is on the local network. Refusing other addresses means a link on a
+            // web page can't point the phone at a server on the internet.
+            require(hosts.all { isLocalAddress(it) }) { "The computer's address must be on your local network" }
             val port = params["port"]?.toIntOrNull()
             require(port != null && port in 1..65535) { "Invalid port" }
             val fp = params["fp"].orEmpty().lowercase()

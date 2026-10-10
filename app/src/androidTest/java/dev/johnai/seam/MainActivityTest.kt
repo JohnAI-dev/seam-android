@@ -1,6 +1,7 @@
 package dev.johnai.seam
 
 import android.Manifest
+import android.content.DialogInterface
 import android.content.Intent
 import android.net.Uri
 import android.widget.TextView
@@ -56,6 +57,11 @@ class MainActivityTest {
             .setClass(context, MainActivity::class.java)
         ActivityScenario.launch<MainActivity>(intent).use { scenario ->
             scenario.onActivity { a ->
+                // Nothing is saved until the person confirms.
+                assertNull(PairingStore(context).pairing)
+                a.pairingDialog!!.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+            }
+            scenario.onActivity { a ->
                 val paired = a.window.decorView.findViewWithTag<TextView>("paired")
                 assertEquals("Paired with Johns MacBook Air", paired.text.toString())
             }
@@ -75,6 +81,18 @@ class MainActivityTest {
             scenario.onActivity { a ->
                 val notice = a.window.decorView.findViewWithTag<TextView>("notice")
                 assertTrue(notice.text.contains("isn't a valid Seam pairing link"))
+            }
+        }
+        assertNull(PairingStore(context).pairing)
+    }
+
+    @Test
+    fun aPairingLinkDoesNothingUnlessConfirmed() {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(pairLink))
+            .setClass(context, MainActivity::class.java)
+        ActivityScenario.launch<MainActivity>(intent).use { scenario ->
+            scenario.onActivity { a ->
+                a.pairingDialog!!.getButton(DialogInterface.BUTTON_NEGATIVE).performClick()
             }
         }
         assertNull(PairingStore(context).pairing)

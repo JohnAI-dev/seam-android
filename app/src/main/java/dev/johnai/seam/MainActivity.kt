@@ -2,6 +2,7 @@ package dev.johnai.seam
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Intent
@@ -72,6 +73,9 @@ class MainActivity : Activity() {
         pairWith(data)
     }
 
+    /** The open "Pair with …?" question, if any (tests press its buttons). */
+    internal var pairingDialog: AlertDialog? = null
+
     private fun pairWith(link: String) {
         val info = try {
             PairingInfo.parse(link)
@@ -79,6 +83,29 @@ class MainActivity : Activity() {
             showMessage(getString(R.string.pair_invalid, e.message ?: ""))
             return
         }
+        // Any web page or app can open a seam:// link, so never pair without asking: pairing
+        // sends this phone's notifications to that computer.
+        val current = store.pairing
+        val message = buildString {
+            append(getString(R.string.pair_confirm_body))
+            append("\n\n")
+            append(getString(R.string.pair_confirm_details, info.hosts.joinToString(", "), info.fingerprint.take(16)))
+            if (current != null) {
+                append("\n\n")
+                append(getString(R.string.pair_confirm_replaces, current.name))
+            }
+        }
+        pairingDialog?.dismiss()
+        pairingDialog = AlertDialog.Builder(this)
+            .setTitle(getString(R.string.pair_confirm_title, info.name))
+            .setMessage(message)
+            .setPositiveButton(R.string.pair_confirm_yes) { _, _ -> savePairing(info) }
+            .setNegativeButton(android.R.string.cancel) { _, _ -> showMessage(getString(R.string.pair_cancelled)) }
+            .setOnDismissListener { pairingDialog = null }
+            .show()
+    }
+
+    private fun savePairing(info: PairingInfo) {
         LinkHub.stopService(this)
         store.pairing = info
         LinkHub.startService(this)
