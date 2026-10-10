@@ -116,6 +116,16 @@ object LinkHub {
         client?.send(line)
     }
 
+    /** Id of the live link session, or null. Capture this at the start of a long upload. */
+    fun currentSessionId(): Long? = client?.currentSessionId()
+
+    /**
+     * Write [frame] only if [sessionId] is still the live session.
+     * Returns false and writes nothing after a reconnect or disconnect.
+     */
+    fun sendOn(sessionId: Long, frame: String): Boolean =
+        client?.sendOn(sessionId, frame) == true
+
     /** Queue clipboard text if connected. Returns the computer name, or null if not connected. */
     fun sendClipboard(context: Context, text: String): String? {
         val s = status
