@@ -63,6 +63,16 @@ class ProtocolTest {
         assertEquals("Anna", n.getString("title"))
         assertEquals("Hei", n.getString("text"))
         assertEquals(42L, n.getLong("time"))
+        assertEquals(false, n.getBoolean("replyable"))
+
+        val replyable = JSONObject(
+            Protocol.notification("k", "com.whatsapp", "WhatsApp", "Anna", "Hei", 42L, replyable = true),
+        )
+        assertEquals("notification", replyable.getString("type"))
+        assertEquals("k", replyable.getString("id"))
+        assertEquals("Hei", replyable.getString("text"))
+        assertEquals(42L, replyable.getLong("time"))
+        assertEquals(true, replyable.getBoolean("replyable"))
 
         val b = JSONObject(Protocol.battery(150, true))
         assertEquals("battery", b.getString("type"))
@@ -124,6 +134,111 @@ class ProtocolTest {
         assertNull(Protocol.dismissId("""{"type":"dismiss","id":null}"""))
         assertNull(Protocol.dismissId("""{"id":"x"}"""))
         assertNull(Protocol.dismissId("not json"))
+    }
+
+    @Test
+    fun replyRequestAndReplyResult() {
+        assertEquals("notification is gone", Protocol.REPLY_ERROR_GONE)
+        assertEquals("cannot reply to this notification", Protocol.REPLY_ERROR_CANNOT)
+        assertEquals(5_000, Protocol.REPLY_MAX_CHARS)
+
+        val ok = JSONObject(Protocol.replyResult("0|com.example|1|tag|100", true))
+        assertEquals("reply_result", ok.getString("type"))
+        assertEquals("0|com.example|1|tag|100", ok.getString("id"))
+        assertEquals(true, ok.getBoolean("ok"))
+        assertFalse(ok.has("error"))
+
+        val okIgnoresError = JSONObject(Protocol.replyResult("k", true, Protocol.REPLY_ERROR_GONE))
+        assertEquals(true, okIgnoresError.getBoolean("ok"))
+        assertFalse(okIgnoresError.has("error"))
+
+        val gone = JSONObject(Protocol.replyResult("k", false, Protocol.REPLY_ERROR_GONE))
+        assertEquals("reply_result", gone.getString("type"))
+        assertEquals("k", gone.getString("id"))
+        assertEquals(false, gone.getBoolean("ok"))
+        assertEquals(Protocol.REPLY_ERROR_GONE, gone.getString("error"))
+
+        val cannot = JSONObject(Protocol.replyResult("k", false, Protocol.REPLY_ERROR_CANNOT))
+        assertEquals(false, cannot.getBoolean("ok"))
+        assertEquals(Protocol.REPLY_ERROR_CANNOT, cannot.getString("error"))
+
+        val noReason = JSONObject(Protocol.replyResult("k", false))
+        assertEquals(false, noReason.getBoolean("ok"))
+        assertFalse(noReason.has("error"))
+
+        assertEquals(
+            Protocol.ReplyRequest("0|com.example|1|tag|100", "On my way"),
+            Protocol.replyRequest(
+                JSONObject().put("type", "reply").put("id", "0|com.example|1|tag|100")
+                    .put("text", "On my way").toString(),
+            ),
+        )
+
+        val exact = "y".repeat(Protocol.REPLY_MAX_CHARS)
+        val kept = Protocol.replyRequest(
+            JSONObject().put("type", "reply").put("id", "k").put("text", exact).toString(),
+        )
+        assertEquals(exact, kept!!.text)
+
+        val over = "z".repeat(Protocol.REPLY_MAX_CHARS + 40)
+        val truncated = Protocol.replyRequest(
+            JSONObject().put("type", "reply").put("id", "k").put("text", over).toString(),
+        )
+        assertEquals(Protocol.REPLY_MAX_CHARS, truncated!!.text.length)
+        assertEquals("z".repeat(Protocol.REPLY_MAX_CHARS), truncated.text)
+
+        assertEquals(
+            Protocol.ReplyRequest("k", ""),
+            Protocol.replyRequest(JSONObject().put("type", "reply").put("id", "k").put("text", "").toString()),
+        )
+        val extra = Protocol.replyRequest(
+            JSONObject().put("type", "reply").put("id", "k").put("text", "hi").put("extra", 1).toString(),
+        )
+        assertEquals("hi", extra!!.text)
+
+        assertNull(Protocol.replyRequest(JSONObject().put("type", "ping").toString()))
+        assertNull(Protocol.replyRequest(JSONObject().put("type", "dismiss").put("id", "k").toString()))
+        assertNull(
+            Protocol.replyRequest(
+                JSONObject().put("type", "notification").put("id", "k").put("text", "hi").toString(),
+            ),
+        )
+        assertNull(Protocol.replyRequest(JSONObject().put("type", "reply").toString()))
+        assertNull(Protocol.replyRequest(JSONObject().put("type", "reply").put("id", "k").toString()))
+        assertNull(Protocol.replyRequest(JSONObject().put("type", "reply").put("text", "hi").toString()))
+        assertNull(
+            Protocol.replyRequest(
+                JSONObject().put("type", "reply").put("id", "").put("text", "hi").toString(),
+            ),
+        )
+        assertNull(
+            Protocol.replyRequest(
+                JSONObject().put("type", "reply").put("id", JSONObject.NULL).put("text", "hi").toString(),
+            ),
+        )
+        assertNull(
+            Protocol.replyRequest(
+                JSONObject().put("type", "reply").put("id", "k").put("text", JSONObject.NULL).toString(),
+            ),
+        )
+        assertNull(
+            Protocol.replyRequest(
+                JSONObject().put("type", "reply").put("id", 1).put("text", "hi").toString(),
+            ),
+        )
+        assertNull(
+            Protocol.replyRequest(
+                JSONObject().put("type", "reply").put("id", "k").put("text", 2).toString(),
+            ),
+        )
+        assertNull(
+            Protocol.replyRequest(
+                JSONObject().put("type", "reply").put("id", "k").put("text", true).toString(),
+            ),
+        )
+        assertNull(Protocol.replyRequest(JSONObject().put("id", "k").put("text", "hi").toString()))
+        assertNull(Protocol.replyRequest("not json"))
+        assertNull(Protocol.replyRequest(""))
     }
 
     @Test

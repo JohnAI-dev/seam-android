@@ -25,6 +25,7 @@ class LinkClient(
     private val onState: (State, String?) -> Unit,
     private val onDismiss: (String) -> Unit,
     private val onClipboard: (String) -> Unit,
+    private val onReply: (String, String) -> String,
     private val discover: (fingerprint: String) -> DiscoveredService? = { null },
     private val onPairingUpdated: (PairingInfo) -> Unit = {},
 ) {
@@ -177,6 +178,7 @@ class LinkClient(
                         "error" -> throw Rejected(msg.optString("message", "rejected"))
                         "dismiss" -> Protocol.dismissId(line)?.let(onDismiss)
                         "clipboard" -> Protocol.clipboardText(line)?.let(onClipboard)
+                        "reply" -> Protocol.replyRequest(line)?.let { write(onReply(it.id, it.text)) }
                         // Unknown types are ignored so newer computers keep working.
                     }
                 }

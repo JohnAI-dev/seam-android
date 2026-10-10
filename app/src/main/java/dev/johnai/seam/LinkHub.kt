@@ -38,6 +38,7 @@ object LinkHub {
             },
             onDismiss = { id -> SeamNotificationListener.dismiss(id) },
             onClipboard = { text -> putOnClipboard(appContext, text) },
+            onReply = { id, text -> SeamNotificationListener.reply(id, text) },
             discover = { fp -> discovery.find(fp) },
             onPairingUpdated = { updated ->
                 synchronized(this@LinkHub) {
