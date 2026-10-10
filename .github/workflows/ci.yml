@@ -12,6 +12,8 @@ permissions:
   contents: read
 jobs:
   test:
+    # PRs the agent opens are tested inside the agent workflow (and again on main).
+    if: github.event_name != 'pull_request' || github.event.pull_request.user.login != 'github-actions[bot]'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -29,6 +31,8 @@ jobs:
         run: bash scripts/test.sh
 
   emulator:
+    # PRs the agent opens are tested inside the agent workflow (and again on main).
+    if: github.event_name != 'pull_request' || github.event.pull_request.user.login != 'github-actions[bot]'
     # Launches the real app on an Android emulator and checks pairing via a scanned link.
     runs-on: ubuntu-24.04
     timeout-minutes: 45
