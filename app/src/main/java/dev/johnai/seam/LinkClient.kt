@@ -15,15 +15,18 @@ import javax.net.ssl.X509TrustManager
 
 /**
  * Keeps one connection to the paired computer alive: connects, authenticates, sends queued
- * messages, answers pings, and reconnects with backoff. Runs on its own threads.
+ * messages, answers pings, and reconnects with backoff. If a full round of stored hosts fails,
+ * looks the computer up on the local network and saves the new address. Runs on its own threads.
  */
 class LinkClient(
-    private val pairing: PairingInfo,
+    private var pairing: PairingInfo,
     private val deviceId: String,
     private val deviceName: String,
     private val onState: (State, String?) -> Unit,
     private val onDismiss: (String) -> Unit,
     private val onClipboard: (String) -> Unit,
+    private val discover: (fingerprint: String) -> DiscoveredService? = { null },
+    private val onPairingUpdated: (PairingInfo) -> Unit = {},
 ) {
     enum class State { CONNECTING, CONNECTED, DISCONNECTED, REJECTED }
 
@@ -52,38 +55,92 @@ class LinkClient(
     private fun loop() {
         var backoffMs = 2_000L
         while (running) {
-            for (host in pairing.hosts) {
+            var reached = false
+            val hosts = pairing.hosts
+            val port = pairing.port
+            for (host in hosts) {
                 if (!running) return
-                onState(State.CONNECTING, host)
-                try {
-                    session(host)
+                if (tryHost(host, port) { reached = true }) {
                     backoffMs = 2_000L
-                } catch (e: Rejected) {
-                    running = false
-                    onState(State.REJECTED, e.message)
-                    return
-                } catch (e: Exception) {
-                    onState(State.DISCONNECTED, e.message)
+                }
+                if (!running) return
+            }
+            // Stored addresses failed (the computer may have a new IP). Find it on the LAN.
+            if (!reached && running) {
+                onState(State.CONNECTING, null)
+                val found = try {
+                    discover(pairing.fingerprint)
+                } catch (_: Exception) {
+                    null
+                }
+                if (!running || Thread.currentThread().isInterrupted) return
+                if (found != null) {
+                    val addresses = orderedConnectHosts(
+                        found.hosts.ifEmpty { listOf(found.host) },
+                    ).ifEmpty { listOf(found.host) }
+                    for (host in addresses) {
+                        if (!running) return
+                        val clean = tryHost(host, found.port) {
+                            reached = true
+                            remember(host, found.port)
+                        }
+                        if (clean || reached) backoffMs = 2_000L
+                        // Link-local often fails; try the next hostAddresses entry before giving up.
+                        // Once the pin matches, keep that address even if the session later drops.
+                        if (!running || reached) break
+                    }
                 }
             }
+            if (!running) return
             try { Thread.sleep(backoffMs) } catch (_: InterruptedException) { return }
             backoffMs = (backoffMs * 2).coerceAtMost(60_000L)
         }
     }
 
+    /**
+     * Connect to one address. Returns true if the session ended cleanly, so backoff can reset.
+     * [markConnected] runs once the certificate pin matches.
+     */
+    private fun tryHost(host: String, port: Int, markConnected: () -> Unit): Boolean {
+        onState(State.CONNECTING, host)
+        try {
+            session(host, port, markConnected)
+            return true
+        } catch (e: Rejected) {
+            running = false
+            onState(State.REJECTED, e.message)
+            return false
+        } catch (e: Exception) {
+            onState(State.DISCONNECTED, e.message)
+            return false
+        }
+    }
+
+    /** Save a computer found on the local network, and use that address for the next attempt. */
+    private fun remember(host: String, port: Int) {
+        val hosts = listOf(host) + pairing.hosts.filter { it != host }
+        pairing = PairingInfo(hosts, port, pairing.fingerprint, pairing.keyB64, pairing.name)
+        try {
+            onPairingUpdated(pairing)
+        } catch (_: Exception) {
+        }
+    }
+
     private class Rejected(message: String) : Exception(message)
 
-    private fun session(host: String) {
+    private fun session(host: String, port: Int, markConnected: () -> Unit) {
         val tls = SSLContext.getInstance("TLS")
         tls.init(null, arrayOf(PinnedTrustManager(pairing.fingerprint)), null)
         val s = tls.socketFactory.createSocket() as SSLSocket
         socket = s
         s.use { sock ->
-            sock.connect(InetSocketAddress(host, pairing.port), 10_000)
+            sock.connect(InetSocketAddress(host, port), 10_000)
             sock.enabledProtocols = arrayOf("TLSv1.3")
             // The computer pings every 30 s, so 90 s of silence means the link is dead.
             sock.soTimeout = 90_000
             sock.startHandshake()
+            // Pin matched: this address is the paired computer, even if the read loop later fails.
+            markConnected()
             val reader = BufferedReader(InputStreamReader(sock.inputStream, Charsets.UTF_8))
             val writer = OutputStreamWriter(sock.outputStream, Charsets.UTF_8)
             fun write(line: String) = synchronized(writer) { writer.write(line + "\n"); writer.flush() }

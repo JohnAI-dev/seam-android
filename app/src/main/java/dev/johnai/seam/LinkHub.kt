@@ -27,6 +27,7 @@ object LinkHub {
         val store = PairingStore(context)
         val pairing = store.pairing ?: return
         val appContext = context.applicationContext
+        val discovery = SeamDiscovery(appContext)
         client = LinkClient(
             pairing,
             store.deviceId,
@@ -37,6 +38,17 @@ object LinkHub {
             },
             onDismiss = { id -> SeamNotificationListener.dismiss(id) },
             onClipboard = { text -> putOnClipboard(appContext, text) },
+            discover = { fp -> discovery.find(fp) },
+            onPairingUpdated = { updated ->
+                synchronized(this@LinkHub) {
+                    val current = store.pairing
+                    if (client != null && current != null && current.keyB64 == updated.keyB64 &&
+                        current.fingerprint.equals(updated.fingerprint, ignoreCase = true)
+                    ) {
+                        store.pairing = updated
+                    }
+                }
+            },
         ).also { it.start() }
     }
 
