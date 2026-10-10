@@ -28,6 +28,8 @@ class LinkClient(
     private val onReply: (String, String) -> String,
     private val discover: (fingerprint: String) -> DiscoveredService? = { null },
     private val onPairingUpdated: (PairingInfo) -> Unit = {},
+    private val onRing: () -> Unit = {},
+    private val onRingStop: () -> Unit = {},
 ) {
     enum class State { CONNECTING, CONNECTED, DISCONNECTED, REJECTED }
 
@@ -179,6 +181,8 @@ class LinkClient(
                         "dismiss" -> Protocol.dismissId(line)?.let(onDismiss)
                         "clipboard" -> Protocol.clipboardText(line)?.let(onClipboard)
                         "reply" -> Protocol.replyRequest(line)?.let { write(onReply(it.id, it.text)) }
+                        "ring" -> if (Protocol.isRing(line)) onRing()
+                        "ring_stop" -> if (Protocol.isRingStop(line)) onRingStop()
                         // Unknown types are ignored so newer computers keep working.
                     }
                 }

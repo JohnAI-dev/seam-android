@@ -50,6 +50,18 @@ object LinkHub {
                     }
                 }
             },
+            onRing = {
+                try {
+                    PhoneFinder.start(appContext)
+                } catch (_: Exception) {
+                }
+            },
+            onRingStop = {
+                try {
+                    PhoneFinder.stop(appContext)
+                } catch (_: Exception) {
+                }
+            },
         ).also { it.start() }
     }
 

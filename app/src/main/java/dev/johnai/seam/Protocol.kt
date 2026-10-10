@@ -20,6 +20,9 @@ object Protocol {
     /** At most 5 000 characters in a notification reply. */
     const val REPLY_MAX_CHARS = 5_000
 
+    /** Find-my-phone rings this long unless Found it is pressed or ring_stop arrives. */
+    const val RING_DURATION_MS = 60_000L
+
     /** reply_result error when the notification is no longer available. */
     const val REPLY_ERROR_GONE = "notification is gone"
 
@@ -109,6 +112,12 @@ object Protocol {
         if (id.isEmpty()) return null
         return ReplyRequest(id, text.take(REPLY_MAX_CHARS))
     }
+
+    /** True for a find-my-phone ring frame. Extra fields are ignored; ring_stop is not a ring. */
+    fun isRing(frame: String): Boolean = parse(frame)?.opt("type") == "ring"
+
+    /** True for a ring_stop frame. A ring frame is not a stop. */
+    fun isRingStop(frame: String): Boolean = parse(frame)?.opt("type") == "ring_stop"
 
     private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 }
