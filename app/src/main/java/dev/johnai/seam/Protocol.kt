@@ -14,6 +14,9 @@ import javax.crypto.spec.SecretKeySpec
 object Protocol {
     const val VERSION = 1
 
+    /** At most 100 000 characters in a clipboard message. */
+    const val CLIPBOARD_MAX_CHARS = 100_000
+
     /** hex(HMAC-SHA256(key, "seam-v1|" + nonce + "|" + deviceId)) */
     fun proof(key: ByteArray, nonce: String, deviceId: String): String {
         val mac = Mac.getInstance("HmacSHA256")
@@ -43,6 +46,19 @@ object Protocol {
             .put("charging", charging).toString()
 
     fun pong(): String = JSONObject().put("type", "pong").toString()
+
+    /** Clipboard frame; text is truncated to CLIPBOARD_MAX_CHARS. */
+    fun clipboard(text: String): String =
+        JSONObject().put("type", "clipboard").put("text", text.take(CLIPBOARD_MAX_CHARS)).toString()
+
+    /** Text from a clipboard frame, truncated, or null if it isn't a clipboard message. */
+    fun clipboardText(frame: String): String? {
+        val msg = parse(frame) ?: return null
+        if (msg.optString("type") != "clipboard") return null
+        if (msg.isNull("text")) return null
+        val text = msg.opt("text") as? String ?: return null
+        return text.take(CLIPBOARD_MAX_CHARS)
+    }
 
     /** Parse one frame; returns null for anything that isn't a JSON object with a type. */
     fun parse(line: String): JSONObject? = try {

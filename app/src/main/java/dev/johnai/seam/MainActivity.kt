@@ -91,6 +91,21 @@ class MainActivity : Activity() {
         notice.visibility = View.VISIBLE
     }
 
+    /** Read the clipboard while this screen is in front and send it to the computer. */
+    private fun sendClipboardToComputer() {
+        val clip = getSystemService(ClipboardManager::class.java).primaryClip
+        val text = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
+        if (text.isNullOrEmpty()) {
+            showMessage(getString(R.string.clipboard_nothing))
+            return
+        }
+        val name = LinkHub.sendClipboard(this, text)
+        showMessage(
+            if (name == null) getString(R.string.clipboard_not_connected)
+            else getString(R.string.clipboard_sent, name)
+        )
+    }
+
     private fun render() {
         val pairing = store.pairing
         val s = LinkHub.status
@@ -172,6 +187,7 @@ class MainActivity : Activity() {
             val text = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
             if (text.isNullOrBlank()) showMessage(getString(R.string.clipboard_empty)) else pairWith(text)
         })
+        column.addView(button(R.string.send_clipboard) { sendClipboardToComputer() })
         forget = button(R.string.forget) {
             LinkHub.stopService(this)
             store.pairing = null

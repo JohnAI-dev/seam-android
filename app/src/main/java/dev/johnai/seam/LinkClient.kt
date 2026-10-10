@@ -23,6 +23,7 @@ class LinkClient(
     private val deviceName: String,
     private val onState: (State, String?) -> Unit,
     private val onDismiss: (String) -> Unit,
+    private val onClipboard: (String) -> Unit,
 ) {
     enum class State { CONNECTING, CONNECTED, DISCONNECTED, REJECTED }
 
@@ -118,6 +119,7 @@ class LinkClient(
                         "ping" -> write(Protocol.pong())
                         "error" -> throw Rejected(msg.optString("message", "rejected"))
                         "dismiss" -> Protocol.dismissId(line)?.let(onDismiss)
+                        "clipboard" -> Protocol.clipboardText(line)?.let(onClipboard)
                         // Unknown types are ignored so newer computers keep working.
                     }
                 }

@@ -1,5 +1,7 @@
 package dev.johnai.seam
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Handler
@@ -24,6 +26,7 @@ object LinkHub {
         if (client != null) return
         val store = PairingStore(context)
         val pairing = store.pairing ?: return
+        val appContext = context.applicationContext
         client = LinkClient(
             pairing,
             store.deviceId,
@@ -33,6 +36,7 @@ object LinkHub {
                 if (state == LinkClient.State.CONNECTED) onConnected?.invoke()
             },
             onDismiss = { id -> SeamNotificationListener.dismiss(id) },
+            onClipboard = { text -> putOnClipboard(appContext, text) },
         ).also { it.start() }
     }
 
@@ -48,6 +52,30 @@ object LinkHub {
 
     fun send(line: String) {
         client?.send(line)
+    }
+
+    /** Queue clipboard text if connected. Returns the computer name, or null if not connected. */
+    fun sendClipboard(context: Context, text: String): String? {
+        val s = status
+        if (s.state != LinkClient.State.CONNECTED) return null
+        send(Protocol.clipboard(text))
+        return s.detail?.takeIf { it.isNotBlank() }
+            ?: PairingStore(context).pairing?.name.orEmpty()
+    }
+
+    /**
+     * Put computer clipboard text on this phone, on the main thread.
+     * Incoming clips are not echoed: the phone only sends clipboard text when the person asks.
+     */
+    private fun putOnClipboard(context: Context, text: String) {
+        val clipped = text.take(Protocol.CLIPBOARD_MAX_CHARS)
+        main.post {
+            try {
+                context.getSystemService(ClipboardManager::class.java)
+                    ?.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.app_name), clipped))
+            } catch (_: Exception) {
+            }
+        }
     }
 
     fun addListener(l: (Status) -> Unit) {
