@@ -329,7 +329,10 @@ class MainActivity : Activity() {
             alpha = 0.6f
             setPadding(0, dp(24), 0, 0)
         })
-        return ScrollView(this).apply { addView(column) }
+        return ScrollView(this).apply {
+            addView(column)
+            padForSystemBars()
+        }
     }
 
     private fun button(label: Int, onClick: () -> Unit) = Button(this).apply {
