@@ -17,6 +17,15 @@ object Protocol {
     /** At most 100 000 characters in a clipboard message. */
     const val CLIPBOARD_MAX_CHARS = 100_000
 
+    /** At most 5 000 characters in a notification reply. */
+    const val REPLY_MAX_CHARS = 5_000
+
+    /** reply_result error when the notification is no longer available. */
+    const val REPLY_ERROR_GONE = "notification is gone"
+
+    /** reply_result error when the notification has no usable reply action. */
+    const val REPLY_ERROR_CANNOT = "cannot reply to this notification"
+
     /** hex(HMAC-SHA256(key, "seam-v1|" + nonce + "|" + deviceId)) */
     fun proof(key: ByteArray, nonce: String, deviceId: String): String {
         val mac = Mac.getInstance("HmacSHA256")
@@ -34,8 +43,10 @@ object Protocol {
 
     fun notification(
         id: String, app: String, appName: String, title: String, text: String, time: Long,
+        replyable: Boolean = false,
     ): String = JSONObject().put("type", "notification").put("id", id).put("app", app)
         .put("app_name", appName).put("title", title).put("text", text).put("time", time)
+        .put("replyable", replyable)
         .toString()
 
     fun notificationRemoved(id: String): String =
@@ -73,6 +84,30 @@ object Protocol {
         if (msg.optString("type") != "dismiss") return null
         if (msg.isNull("id")) return null
         return msg.optString("id").takeIf { it.isNotEmpty() }
+    }
+
+    /** A computer's request to reply to a notification. */
+    data class ReplyRequest(val id: String, val text: String)
+
+    /** reply_result frame. The error is included only when ok is false. */
+    fun replyResult(id: String, ok: Boolean, error: String? = null): String {
+        val o = JSONObject().put("type", "reply_result").put("id", id).put("ok", ok)
+        if (!ok && !error.isNullOrEmpty()) o.put("error", error)
+        return o.toString()
+    }
+
+    /**
+     * Id and text from a reply frame, or null if it isn't a valid reply.
+     * Text longer than REPLY_MAX_CHARS is truncated. Malformed frames are ignored.
+     */
+    fun replyRequest(frame: String): ReplyRequest? {
+        val msg = parse(frame) ?: return null
+        if (msg.optString("type") != "reply") return null
+        if (msg.isNull("id") || msg.isNull("text")) return null
+        val id = msg.opt("id") as? String ?: return null
+        val text = msg.opt("text") as? String ?: return null
+        if (id.isEmpty()) return null
+        return ReplyRequest(id, text.take(REPLY_MAX_CHARS))
     }
 
     private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
