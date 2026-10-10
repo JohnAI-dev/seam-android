@@ -4,11 +4,14 @@ import java.io.BufferedReader
 import java.io.IOException
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
+import java.io.Writer
 import java.net.InetSocketAddress
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.X509TrustManager
@@ -17,6 +20,11 @@ import javax.net.ssl.X509TrustManager
  * Keeps one connection to the paired computer alive: connects, authenticates, sends queued
  * messages, answers pings, and reconnects with backoff. If a full round of stored hosts fails,
  * looks the computer up on the local network and saves the new address. Runs on its own threads.
+ *
+ * Each connection is a Session with an increasing id. Every frame is written by Session.send,
+ * which holds that session's lock so lines never interleave. The live session sits in an
+ * AtomicReference and is cleared only with compareAndSet, so an old connection cannot drop a
+ * newer one. sendOn writes only when the captured id is still current.
  */
 class LinkClient(
     private var pairing: PairingInfo,
@@ -40,6 +48,10 @@ class LinkClient(
     @Volatile private var socket: SSLSocket? = null
     private var thread: Thread? = null
 
+    /** Live connection. Cleared only with compareAndSet of that same session. */
+    private val currentSession = AtomicReference<Session?>(null)
+    private val nextSessionId = AtomicLong(0)
+
     fun start() {
         if (running) return
         running = true
@@ -55,6 +67,26 @@ class LinkClient(
     /** Queue a message; if the queue is full, the oldest message is dropped. */
     fun send(line: String) {
         while (!outbox.offer(line)) outbox.poll()
+    }
+
+    /** Id of the live session, or null when disconnected. Capture this before a long send. */
+    fun currentSessionId(): Long? = currentSession.get()?.id
+
+    /**
+     * Write [frame] only if [sessionId] is still the current session.
+     * Returns false and writes nothing otherwise, so a file upload cannot land on a newer connection.
+     */
+    fun sendOn(sessionId: Long, frame: String): Boolean {
+        val session = currentSession.get() ?: return false
+        if (session.id != sessionId) return false
+        return session.send(frame)
+    }
+
+    /** Bind [writer] to a new session and publish it as current, replacing any previous one. */
+    fun openSession(writer: Writer): Session {
+        val session = Session(nextSessionId.incrementAndGet(), writer, currentSession)
+        currentSession.set(session)
+        return session
     }
 
     private fun loop() {
@@ -131,6 +163,36 @@ class LinkClient(
         }
     }
 
+    /**
+     * One connection's writer. [id] increases for every connection. [send] holds [lock]
+     * for the whole line, so frames from the reader, the outbox, and [LinkClient.sendOn]
+     * never interleave. [end] clears the live session only with compareAndSet.
+     */
+    class Session internal constructor(
+        val id: Long,
+        private val writer: Writer,
+        private val current: AtomicReference<Session?>,
+    ) {
+        private val lock = Any()
+        private var open = true
+
+        /** Write [frame] as one line. False if this session has ended or is no longer current. */
+        fun send(frame: String): Boolean {
+            synchronized(lock) {
+                if (!open || current.get() !== this) return false
+                writer.write(frame + "\n")
+                writer.flush()
+                return true
+            }
+        }
+
+        /** Stop writes, then drop this session only if it is still the current one. */
+        fun end() {
+            synchronized(lock) { open = false }
+            current.compareAndSet(this, null)
+        }
+    }
+
     private class Rejected(message: String) : Exception(message)
 
     private fun session(host: String, port: Int, markConnected: () -> Unit) {
@@ -148,59 +210,73 @@ class LinkClient(
             markConnected()
             val reader = BufferedReader(InputStreamReader(sock.inputStream, Charsets.UTF_8))
             val writer = OutputStreamWriter(sock.outputStream, Charsets.UTF_8)
-            fun write(line: String) = synchronized(writer) { writer.write(line + "\n"); writer.flush() }
-
-            val challenge = Protocol.parse(reader.readLine() ?: throw IOException("closed"))
-            if (challenge?.optString("type") != "challenge") throw IOException("expected challenge")
-            val nonce = challenge.getString("nonce")
-            write(Protocol.hello(deviceId, deviceName, Protocol.proof(pairing.key, nonce, deviceId)))
-            val reply = Protocol.parse(reader.readLine() ?: throw IOException("closed"))
-            when (reply?.optString("type")) {
-                "welcome" -> {}
-                "error" -> throw Rejected(reply.optString("message", "rejected"))
-                else -> throw IOException("unexpected reply")
-            }
-            onState(State.CONNECTED, reply.optString("desktop_name"))
-
-            val sender = Thread({
-                try {
-                    while (!Thread.currentThread().isInterrupted) {
-                        val line = outbox.poll(30, TimeUnit.SECONDS) ?: continue
-                        write(line)
-                    }
-                } catch (_: Exception) {
-                    try { sock.close() } catch (_: IOException) {}
-                }
-            }, "seam-link-send").apply { isDaemon = true; start() }
-
+            val conn = openSession(writer)
             try {
-                while (running) {
-                    val line = reader.readLine() ?: break
-                    val msg = Protocol.parse(line) ?: continue
-                    when (msg.optString("type")) {
-                        "ping" -> write(Protocol.pong())
-                        "error" -> throw Rejected(msg.optString("message", "rejected"))
-                        "dismiss" -> Protocol.dismissId(line)?.let(onDismiss)
-                        "clipboard" -> Protocol.clipboardText(line)?.let(onClipboard)
-                        "reply" -> Protocol.replyRequest(line)?.let { write(onReply(it.id, it.text)) }
-                        "ring" -> if (Protocol.isRing(line)) onRing()
-                        "ring_stop" -> if (Protocol.isRingStop(line)) onRingStop()
-                        "call_action" -> Protocol.callAction(line)?.let(onCallAction)
-                        "file_offer", "file_accept", "file_reject", "file_chunk",
-                        "file_done", "file_result", "file_cancel" -> {
-                            // Written here so file_accept goes out before the next frame is read.
-                            val reply = try {
-                                onFile(line)
-                            } catch (_: Exception) {
-                                null
+                val challenge = Protocol.parse(reader.readLine() ?: throw IOException("closed"))
+                if (challenge?.optString("type") != "challenge") throw IOException("expected challenge")
+                val nonce = challenge.getString("nonce")
+                if (!conn.send(Protocol.hello(deviceId, deviceName, Protocol.proof(pairing.key, nonce, deviceId)))) {
+                    throw IOException("closed")
+                }
+                val reply = Protocol.parse(reader.readLine() ?: throw IOException("closed"))
+                when (reply?.optString("type")) {
+                    "welcome" -> {}
+                    "error" -> throw Rejected(reply.optString("message", "rejected"))
+                    else -> throw IOException("unexpected reply")
+                }
+                onState(State.CONNECTED, reply.optString("desktop_name"))
+
+                val sender = Thread({
+                    try {
+                        while (!Thread.currentThread().isInterrupted) {
+                            val line = outbox.poll(30, TimeUnit.SECONDS) ?: continue
+                            if (!conn.send(line)) {
+                                // Not written (session replaced or ended). Keep it for the live session.
+                                while (!outbox.offer(line)) outbox.poll()
+                                break
                             }
-                            if (reply != null) write(reply)
                         }
-                        // Unknown types are ignored so newer computers keep working.
+                    } catch (_: Exception) {
+                        try { sock.close() } catch (_: IOException) {}
+                    } finally {
+                        conn.end()
                     }
+                }, "seam-link-send").apply { isDaemon = true; start() }
+
+                try {
+                    while (running) {
+                        val line = reader.readLine() ?: break
+                        val msg = Protocol.parse(line) ?: continue
+                        when (msg.optString("type")) {
+                            "ping" -> if (!conn.send(Protocol.pong())) break
+                            "error" -> throw Rejected(msg.optString("message", "rejected"))
+                            "dismiss" -> Protocol.dismissId(line)?.let(onDismiss)
+                            "clipboard" -> Protocol.clipboardText(line)?.let(onClipboard)
+                            "reply" -> {
+                                val req = Protocol.replyRequest(line)
+                                if (req != null && !conn.send(onReply(req.id, req.text))) break
+                            }
+                            "ring" -> if (Protocol.isRing(line)) onRing()
+                            "ring_stop" -> if (Protocol.isRingStop(line)) onRingStop()
+                            "call_action" -> Protocol.callAction(line)?.let(onCallAction)
+                            "file_offer", "file_accept", "file_reject", "file_chunk",
+                            "file_done", "file_result", "file_cancel" -> {
+                                // Written here so file_accept goes out before the next frame is read.
+                                val reply = try {
+                                    onFile(line)
+                                } catch (_: Exception) {
+                                    null
+                                }
+                                if (reply != null && !conn.send(reply)) break
+                            }
+                            // Unknown types are ignored so newer computers keep working.
+                        }
+                    }
+                } finally {
+                    sender.interrupt()
                 }
             } finally {
-                sender.interrupt()
+                conn.end()
             }
         }
     }
