@@ -34,4 +34,10 @@
     <string name="files_channel">Received files</string>
     <string name="files_channel_description">Files your computer sends to this phone</string>
     <string name="file_received">Received %1$s</string>
+    <string name="pair_confirm_title">Pair with %1$s?</string>
+    <string name="pair_confirm_body">Only continue if you just scanned the QR code shown by Seam on your own computer. This phone\'s notifications will be sent to that computer.</string>
+    <string name="pair_confirm_details">Address: %1$s\nCertificate: %2$s…</string>
+    <string name="pair_confirm_replaces">This replaces the pairing with %1$s.</string>
+    <string name="pair_confirm_yes">Pair</string>
+    <string name="pair_cancelled">Pairing cancelled.</string>
 </resources>
