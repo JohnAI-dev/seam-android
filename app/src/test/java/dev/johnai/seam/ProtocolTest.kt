@@ -281,6 +281,135 @@ class ProtocolTest {
     }
 
     @Test
+    fun fileTransferFrames() {
+        val id = "ab".repeat(16)
+        assertEquals(32, id.length)
+        assertEquals(2L * 1024 * 1024 * 1024, Protocol.FILE_MAX_BYTES)
+        assertEquals(256 * 1024, Protocol.FILE_CHUNK_MAX_BYTES)
+
+        val offer = JSONObject(Protocol.fileOffer(id, "notes.txt", 12L, "text/plain"))
+        assertEquals("file_offer", offer.getString("type"))
+        assertEquals(id, offer.getString("transfer"))
+        assertEquals("notes.txt", offer.getString("name"))
+        assertEquals(12L, offer.getLong("size"))
+        assertEquals("text/plain", offer.getString("mime"))
+
+        val parsedOffer = Protocol.parseFileOffer(
+            """{"type":"file_offer","transfer":"$id","name":"notes.txt","size":12,"mime":"text/plain"}""",
+        )
+        assertEquals(id, parsedOffer!!.transfer)
+        assertEquals("notes.txt", parsedOffer.name)
+        assertEquals(12L, parsedOffer.size)
+        assertEquals("text/plain", parsedOffer.mime)
+
+        val noMime = Protocol.parseFileOffer(Protocol.fileOffer(id, "../x", 0L))
+        assertEquals("../x", noMime!!.name)
+        assertEquals(0L, noMime.size)
+        assertNull(noMime.mime)
+        assertFalse(JSONObject(Protocol.fileOffer(id, "a", 1L)).has("mime"))
+
+        val big = 3_000_000_000L
+        assertEquals(big, Protocol.parseFileOffer(Protocol.fileOffer(id, "big.bin", big))!!.size)
+        assertEquals(
+            big,
+            Protocol.parseFileOffer(
+                """{"type":"file_offer","transfer":"$id","name":"big.bin","size":$big}""",
+            )!!.size,
+        )
+        assertNull(Protocol.parseFileOffer(Protocol.fileOffer(id, "big.bin", big))!!.mime)
+
+        val upper = "AB".repeat(16)
+        assertEquals(upper, Protocol.parseFileAccept("""{"type":"file_accept","transfer":"$upper"}"""))
+
+        val accept = JSONObject(Protocol.fileAccept(id))
+        assertEquals("file_accept", accept.getString("type"))
+        assertEquals(id, accept.getString("transfer"))
+        assertEquals(id, Protocol.parseFileAccept(Protocol.fileAccept(id)))
+        assertEquals(id, Protocol.parseFileAccept("""{"type":"file_accept","transfer":"$id"}"""))
+
+        val reject = JSONObject(Protocol.fileReject(id, "no thanks"))
+        assertEquals("file_reject", reject.getString("type"))
+        assertEquals(id, reject.getString("transfer"))
+        assertEquals("no thanks", reject.getString("reason"))
+        assertEquals("no thanks", Protocol.parseFileReject(Protocol.fileReject(id, "no thanks"))!!.reason)
+        val rejectPlain = JSONObject(Protocol.fileReject(id))
+        assertFalse(rejectPlain.has("reason"))
+        assertNull(Protocol.parseFileReject(Protocol.fileReject(id))!!.reason)
+
+        val bytes = byteArrayOf(1, 2, 3)
+        val chunk = JSONObject(Protocol.fileChunk(id, 0L, bytes))
+        assertEquals("file_chunk", chunk.getString("type"))
+        assertEquals(id, chunk.getString("transfer"))
+        assertEquals(0L, chunk.getLong("seq"))
+        assertEquals(Base64.getEncoder().encodeToString(bytes), chunk.getString("data"))
+        val round = Protocol.parseFileChunk(Protocol.fileChunk(id, 0L, bytes))
+        assertEquals(0L, round!!.seq)
+        assertTrue(bytes.contentEquals(round.data))
+        val fromDesktop = Protocol.parseFileChunk(
+            """{"type":"file_chunk","transfer":"$id","seq":0,"data":"AQID"}""",
+        )
+        assertEquals(id, fromDesktop!!.transfer)
+        assertEquals(0L, fromDesktop.seq)
+        assertTrue(byteArrayOf(1, 2, 3).contentEquals(fromDesktop.data))
+        val wideSeq = Int.MAX_VALUE.toLong() + 5
+        assertEquals(wideSeq, Protocol.parseFileChunk(Protocol.fileChunk(id, wideSeq, byteArrayOf(9)))!!.seq)
+
+        val hash = "cd".repeat(32)
+        val done = JSONObject(Protocol.fileDone(id, hash))
+        assertEquals("file_done", done.getString("type"))
+        assertEquals(id, done.getString("transfer"))
+        assertEquals(hash, done.getString("sha256"))
+        assertEquals(
+            hash,
+            Protocol.parseFileDone("""{"type":"file_done","transfer":"$id","sha256":"$hash"}""")!!.sha256,
+        )
+        assertEquals(hash.uppercase(), Protocol.parseFileDone(Protocol.fileDone(id, hash.uppercase()))!!.sha256)
+
+        val ok = JSONObject(Protocol.fileResult(id, true))
+        assertEquals("file_result", ok.getString("type"))
+        assertEquals(id, ok.getString("transfer"))
+        assertTrue(ok.getBoolean("ok"))
+        assertFalse(ok.has("error"))
+        val okParsed = Protocol.parseFileResult(Protocol.fileResult(id, true, "ignored"))
+        assertTrue(okParsed!!.ok)
+        assertNull(okParsed.error)
+        val bad = JSONObject(Protocol.fileResult(id, false, "wrong hash"))
+        assertFalse(bad.getBoolean("ok"))
+        assertEquals("wrong hash", bad.getString("error"))
+        val badParsed = Protocol.parseFileResult(
+            """{"type":"file_result","transfer":"$id","ok":false,"error":"wrong hash"}""",
+        )
+        assertFalse(badParsed!!.ok)
+        assertEquals("wrong hash", badParsed.error)
+        assertNull(Protocol.parseFileResult(Protocol.fileResult(id, false))!!.error)
+
+        val cancel = JSONObject(Protocol.fileCancel(id))
+        assertEquals("file_cancel", cancel.getString("type"))
+        assertEquals(id, cancel.getString("transfer"))
+        assertEquals(id, Protocol.parseFileCancel("""{"type":"file_cancel","transfer":"$id","extra":1}"""))
+
+        assertNull(Protocol.parseFileOffer("""{"type":"ping"}"""))
+        assertNull(Protocol.parseFileOffer("""{"type":"file_offer","transfer":"$id","name":"a"}"""))
+        assertNull(Protocol.parseFileOffer("""{"type":"file_offer","transfer":"zz","name":"a","size":1}"""))
+        assertNull(Protocol.parseFileOffer("""{"type":"file_offer","transfer":"$id","name":1,"size":1}"""))
+        assertNull(Protocol.parseFileOffer("""{"type":"file_offer","transfer":"$id","name":"a","size":-1}"""))
+        assertNull(
+            Protocol.parseFileOffer("""{"type":"file_offer","transfer":"$id","name":"a","size":1,"mime":1}"""),
+        )
+        assertNull(Protocol.parseFileAccept("""{"type":"file_accept","transfer":"$id "}"""))
+        assertNull(Protocol.parseFileChunk("""{"type":"file_chunk","transfer":"$id","seq":0,"data":"!!!!"}"""))
+        assertNull(Protocol.parseFileChunk("""{"type":"file_chunk","transfer":"$id","seq":0}"""))
+        assertNull(Protocol.parseFileChunk("""{"type":"file_chunk","transfer":"$id","data":"YQ=="}"""))
+        assertNull(Protocol.parseFileDone("""{"type":"file_done","transfer":"$id","sha256":"abcd"}"""))
+        assertNull(Protocol.parseFileDone("""{"type":"file_done","transfer":"$id","sha256":"${"zz".repeat(32)}"}"""))
+        assertNull(Protocol.parseFileResult("""{"type":"file_result","transfer":"$id","ok":"yes"}"""))
+        assertNull(Protocol.parseFileCancel("""{"type":"file_cancel"}"""))
+        assertNull(Protocol.parseFileOffer("not json"))
+        assertNull(Protocol.parseFileChunk("not json"))
+        assertNull(Protocol.dismissId("""{"type":"file_offer","transfer":"$id","name":"a","size":1}"""))
+    }
+
+    @Test
     fun pinnedTrustManagerRejectsMissingCertificate() {
         try {
             PinnedTrustManager("00".repeat(32)).checkServerTrusted(emptyArray(), "ECDHE")

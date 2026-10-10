@@ -31,4 +31,7 @@
     <string name="find_title">Find my phone</string>
     <string name="find_text">Your computer is ringing this phone.</string>
     <string name="found_it">Found it</string>
+    <string name="files_channel">Received files</string>
+    <string name="files_channel_description">Files your computer sends to this phone</string>
+    <string name="file_received">Received %1$s</string>
 </resources>

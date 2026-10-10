@@ -18,6 +18,7 @@ object LinkHub {
         private set
 
     private var client: LinkClient? = null
+    private var files: FileInbox? = null
     private val listeners = mutableSetOf<(Status) -> Unit>()
     private val main = Handler(Looper.getMainLooper())
 
@@ -28,11 +29,15 @@ object LinkHub {
         val pairing = store.pairing ?: return
         val appContext = context.applicationContext
         val discovery = SeamDiscovery(appContext)
+        files?.abandon()
+        val inbox = FileInbox(appContext)
+        files = inbox
         client = LinkClient(
             pairing,
             store.deviceId,
             store.deviceName,
             onState = { state, detail ->
+                if (state != LinkClient.State.CONNECTED) inbox.abandon()
                 update(Status(state, detail))
                 if (state == LinkClient.State.CONNECTED) onConnected?.invoke()
             },
@@ -62,6 +67,7 @@ object LinkHub {
                 } catch (_: Exception) {
                 }
             },
+            onFile = { line -> inbox.handle(line) },
         ).also { it.start() }
     }
 
@@ -69,6 +75,8 @@ object LinkHub {
     fun stop() {
         client?.stop()
         client = null
+        files?.abandon()
+        files = null
         update(Status(null, null))
     }
 
