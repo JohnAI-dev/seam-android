@@ -281,6 +281,25 @@ class ProtocolTest {
     }
 
     @Test
+    fun callFrame() {
+        val ringing = JSONObject(Protocol.call("ringing", "+15551212", "Ada"))
+        assertEquals("call", ringing.getString("type"))
+        assertEquals("ringing", ringing.getString("state"))
+        assertEquals("+15551212", ringing.getString("number"))
+        assertEquals("Ada", ringing.getString("name"))
+        assertEquals(4, ringing.length())
+
+        val ended = JSONObject(Protocol.call("ended", "", ""))
+        assertEquals("ended", ended.getString("state"))
+        assertEquals("", ended.getString("number"))
+        assertEquals("", ended.getString("name"))
+        assertTrue(ended.has("number"))
+        assertTrue(ended.has("name"))
+        assertNull(Protocol.dismissId(Protocol.call("ringing", "1", "A")))
+        assertNull(Protocol.clipboardText(Protocol.call("active", "", "")))
+    }
+
+    @Test
     fun fileTransferFrames() {
         val id = "ab".repeat(16)
         assertEquals(32, id.length)

@@ -67,6 +67,11 @@ object Protocol {
 
     fun pong(): String = JSONObject().put("type", "pong").toString()
 
+    /** Phone to computer call state. [number] and [name] are empty when unknown. */
+    fun call(state: String, number: String, name: String): String =
+        JSONObject().put("type", "call").put("state", state)
+            .put("number", number).put("name", name).toString()
+
     /** Clipboard frame; text is truncated to CLIPBOARD_MAX_CHARS. */
     fun clipboard(text: String): String =
         JSONObject().put("type", "clipboard").put("text", text.take(CLIPBOARD_MAX_CHARS)).toString()
