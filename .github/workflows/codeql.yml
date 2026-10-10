@@ -30,11 +30,11 @@ jobs:
         if: matrix.language == 'java-kotlin'
         with:
           gradle-version: "9.1.0"
-      - uses: github/codeql-action/init@v3
+      - uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.language == 'java-kotlin' && 'manual' || 'none' }}
       - name: Build
         if: matrix.language == 'java-kotlin'
-        run: gradle --no-daemon --console=plain :app:assembleDebug
-      - uses: github/codeql-action/analyze@v3
+        run: gradle --no-daemon --no-build-cache --rerun-tasks --console=plain -Pkotlin.compiler.execution.strategy=in-process :app:assembleDebug
+      - uses: github/codeql-action/analyze@v4
