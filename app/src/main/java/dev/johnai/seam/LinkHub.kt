@@ -68,6 +68,7 @@ object LinkHub {
                 }
             },
             onCallAction = { action -> performCallAction(action) },
+            onPhotoRequest = { id -> performPhotoRequest(id) },
             onFile = { line ->
                 val outgoing = try {
                     onOutgoingFile?.invoke(line) == true
@@ -106,10 +107,30 @@ object LinkHub {
     }
 
     /**
+     * The running link service registers this so a photos-permission grant can start
+     * watching MediaStore without a process restart. Null while the service is down.
+     */
+    @Volatile var onStartPhotos: (() -> Unit)? = null
+
+    /** Start recent-photo watching if the link service is already running. */
+    fun startRecentPhotos() {
+        try {
+            onStartPhotos?.invoke()
+        } catch (_: Exception) {
+        }
+    }
+
+    /**
      * The running link service registers this to decline or silence a call when the
      * computer sends call_action. Null while the service is down.
      */
     @Volatile var onCallAction: ((String) -> Unit)? = null
+
+    /**
+     * The running link service registers this to upload a photo when the computer sends
+     * photo_request. Null while the service is down.
+     */
+    @Volatile var onPhotoRequest: ((String) -> Unit)? = null
 
     /**
      * Link service: true if [line] is a reply to an upload this phone started
@@ -124,6 +145,14 @@ object LinkHub {
     fun performCallAction(action: String) {
         try {
             onCallAction?.invoke(action)
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Upload the requested photo if the link service is running. */
+    fun performPhotoRequest(id: String) {
+        try {
+            onPhotoRequest?.invoke(id)
         } catch (_: Exception) {
         }
     }

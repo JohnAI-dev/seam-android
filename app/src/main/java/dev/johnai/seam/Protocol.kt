@@ -29,6 +29,15 @@ object Protocol {
     /** A file_chunk carries at most 256 KiB of raw bytes. */
     const val FILE_CHUNK_MAX_BYTES = 256 * 1024
 
+    /** On connect, announce this many recent photos, oldest first. */
+    const val PHOTO_RECENT_LIMIT = 12
+
+    /** photo_new thumbnail is a JPEG of at most this many bytes. */
+    const val PHOTO_THUMB_MAX_BYTES = 32 * 1024
+
+    /** Longest side of a photo_new thumbnail, in pixels. */
+    const val PHOTO_THUMB_SIDE = 256
+
     /** reply_result error when the notification is no longer available. */
     const val REPLY_ERROR_GONE = "notification is gone"
 
@@ -78,6 +87,30 @@ object Protocol {
         if (msg.opt("type") != "call_action") return null
         val action = msg.opt("action") as? String ?: return null
         return action.takeIf { it == "decline" || it == "silence" }
+    }
+
+    /**
+     * photo_new frame. Null if [id] is empty or [thumbJpeg] is empty or larger than
+     * [PHOTO_THUMB_MAX_BYTES]. [name] is reduced to a file name (no path).
+     */
+    fun photoNew(id: String, name: String, taken: Long, thumbJpeg: ByteArray): String? {
+        if (id.isEmpty() || thumbJpeg.isEmpty() || thumbJpeg.size > PHOTO_THUMB_MAX_BYTES) return null
+        return JSONObject()
+            .put("type", "photo_new")
+            .put("id", id)
+            .put("name", FileTransfer.sanitizeName(name))
+            .put("taken", taken)
+            .put("thumb", Base64.getEncoder().encodeToString(thumbJpeg))
+            .toString()
+    }
+
+    /** Id from a photo_request frame, or null if it is not one. Blank ids are ignored. */
+    fun parsePhotoRequest(frame: String): String? {
+        val msg = parse(frame) ?: return null
+        if (msg.opt("type") != "photo_request") return null
+        if (msg.isNull("id")) return null
+        val id = msg.opt("id") as? String ?: return null
+        return id.trim().takeIf { it.isNotEmpty() }
     }
 
     /** Clipboard frame; text is truncated to CLIPBOARD_MAX_CHARS. */

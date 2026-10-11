@@ -71,6 +71,43 @@ class FileOutbox(
         }
     }
 
+    /**
+     * Upload a stream opened on this executor. When [onlySession] is set, the offer is
+     * written only if that session is still current (a photo_request must not continue
+     * on a later connection). The stream is opened here, not by the caller.
+     */
+    fun enqueueDeferred(
+        name: String,
+        size: Long,
+        mime: String?,
+        onlySession: Long?,
+        open: () -> InputStream?,
+    ) {
+        val safe = FileTransfer.sanitizeName(name)
+        val job = object : NamedUpload(safe, {}) {
+            override fun run() {
+                if (executor.isShutdown || Thread.currentThread().isInterrupted) {
+                    notifyNotSent(safe)
+                    return
+                }
+                if (onlySession != null && LinkHub.currentSessionId() != onlySession) return
+                val stream = try {
+                    open()
+                } catch (_: Exception) {
+                    null
+                }
+                if (stream == null) {
+                    notifyNotSent(safe)
+                    return
+                }
+                StreamUpload(safe, stream) {
+                    sendOne(OpenedShare(safe, size, mime, stream), onlySession)
+                }.run()
+            }
+        }
+        if (!UploadJobs.submit(executor, job)) notifyNotSent(safe)
+    }
+
     /** [dropped] is what [ExecutorService.shutdownNow] returned: work that never started. */
     fun onExecutorStopped(dropped: List<Runnable>) {
         cancelProgress()
@@ -93,10 +130,19 @@ class FileOutbox(
         notifyDone(app.getString(R.string.file_not_sent), name)
     }
 
-    private fun sendOne(file: OpenedShare) {
+    private fun sendOne(file: OpenedShare, onlySession: Long? = null) {
         val name = FileTransfer.sanitizeName(file.name)
         if (executor.isShutdown || Thread.currentThread().isInterrupted) {
             notifyNotSent(name)
+            return
+        }
+        // Session ended after the stream was opened, before FileUpload. Close it here.
+        // Say nothing: the computer that asked is gone.
+        if (onlySession != null && LinkHub.currentSessionId() != onlySession) {
+            try {
+                file.stream.close()
+            } catch (_: Exception) {
+            }
             return
         }
         val transfer = FileSend.randomTransferId()
@@ -113,7 +159,7 @@ class FileOutbox(
                 return
             }
             showProgress(name, 0L, file.size, transfer)
-            val result = FileUpload(ioFor(transfer)).send(
+            val result = FileUpload(ioFor(transfer, onlySession)).send(
                 transfer = transfer,
                 name = name,
                 size = file.size,
@@ -135,10 +181,17 @@ class FileOutbox(
         }
     }
 
-    private fun ioFor(transfer: String) = object : FileUpload.Io {
-        override fun sessionId(): Long? = LinkHub.currentSessionId()
+    private fun ioFor(transfer: String, onlySession: Long? = null) = object : FileUpload.Io {
+        override fun sessionId(): Long? {
+            val id = LinkHub.currentSessionId() ?: return null
+            if (onlySession != null && id != onlySession) return null
+            return id
+        }
 
-        override fun send(sessionId: Long, frame: String): Boolean = LinkHub.sendOn(sessionId, frame)
+        override fun send(sessionId: Long, frame: String): Boolean {
+            if (onlySession != null && sessionId != onlySession) return false
+            return LinkHub.sendOn(sessionId, frame)
+        }
 
         override fun await(transfer: String, sessionId: Long, timeoutMs: Long): String? =
             responses.await(transfer, sessionId, { LinkHub.currentSessionId() }, timeoutMs)

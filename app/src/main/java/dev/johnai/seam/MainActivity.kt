@@ -31,6 +31,7 @@ class MainActivity : Activity() {
     private lateinit var paired: TextView
     private lateinit var notificationAccess: Button
     private lateinit var calls: Button
+    private lateinit var photos: Button
     private lateinit var background: Button
     private lateinit var forget: Button
     private lateinit var allowUpdates: Button
@@ -76,6 +77,7 @@ class MainActivity : Activity() {
         ) {
             LinkHub.startCallMonitor()
         }
+        if (PhotoAccess.granted(this)) LinkHub.startRecentPhotos()
         render()
     }
 
@@ -116,15 +118,18 @@ class MainActivity : Activity() {
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode != REQUEST_CALLS) return
-        // The permission dialog does not redeliver onStartCommand to a running service.
-        if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) ==
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            LinkHub.startCallMonitor()
+        if (requestCode == REQUEST_CALLS) {
+            // The permission dialog does not redeliver onStartCommand to a running service.
+            if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) ==
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                LinkHub.startCallMonitor()
+            }
+        } else if (requestCode == REQUEST_PHOTOS && PhotoAccess.granted(this)) {
             LinkHub.startService(this)
+            LinkHub.startRecentPhotos()
         }
-        render()
+        if (requestCode == REQUEST_CALLS || requestCode == REQUEST_PHOTOS) render()
     }
 
     private fun handlePairingIntent(intent: Intent?) {
@@ -208,6 +213,7 @@ class MainActivity : Activity() {
         notificationAccess.visibility = if (hasAccess) View.GONE else View.VISIBLE
         steps.visibility = if (hasAccess) View.GONE else View.VISIBLE
         calls.visibility = if (hasCallPermissions()) View.GONE else View.VISIBLE
+        photos.visibility = if (PhotoAccess.granted(this)) View.GONE else View.VISIBLE
         val pm = getSystemService(PowerManager::class.java)
         background.visibility =
             if (pm.isIgnoringBatteryOptimizations(packageName)) View.GONE else View.VISIBLE
@@ -286,6 +292,10 @@ class MainActivity : Activity() {
             )
         }
         column.addView(calls)
+        photos = button(R.string.show_photos) {
+            requestPermissions(arrayOf(PhotoAccess.permission()), REQUEST_PHOTOS)
+        }
+        column.addView(photos)
         background = button(R.string.keep_running) {
             @Suppress("BatteryLife")
             startActivity(
@@ -351,5 +361,6 @@ class MainActivity : Activity() {
 
     private companion object {
         const val REQUEST_CALLS = 2
+        const val REQUEST_PHOTOS = 3
     }
 }
