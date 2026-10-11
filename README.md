@@ -15,7 +15,7 @@ your notifications and battery status over Wi-Fi. **No USB debugging, no cable.*
 Protocol: `protocol/PROTOCOL.md`, with test vectors shared with
 [seam-desktop](https://github.com/JohnAI-dev/seam-desktop) so both sides stay compatible.
 
-Plain Kotlin on the Android framework: no third-party runtime libraries.
+Kotlin on the Android framework, using AndroidX and well-known libraries where they fit.
 
 ## Install
 
