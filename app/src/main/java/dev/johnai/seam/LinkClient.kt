@@ -40,6 +40,7 @@ class LinkClient(
     private val onRingStop: () -> Unit = {},
     private val onFile: (String) -> String? = { null },
     private val onCallAction: (String) -> Unit = {},
+    private val onPhotoRequest: (String) -> Unit = {},
 ) {
     enum class State { CONNECTING, CONNECTED, DISCONNECTED, REJECTED }
 
@@ -259,6 +260,7 @@ class LinkClient(
                             "ring" -> if (Protocol.isRing(line)) onRing()
                             "ring_stop" -> if (Protocol.isRingStop(line)) onRingStop()
                             "call_action" -> Protocol.callAction(line)?.let(onCallAction)
+                            "photo_request" -> Protocol.parsePhotoRequest(line)?.let(onPhotoRequest)
                             "file_offer", "file_accept", "file_reject", "file_chunk",
                             "file_done", "file_result", "file_cancel" -> {
                                 // Written here so file_accept goes out before the next frame is read.

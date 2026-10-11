@@ -25,6 +25,9 @@
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <!-- Decline a ringing call from the computer (TelecomManager.endCall). Optional. -->
     <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
+    <!-- Recent photos. Optional: without this, photos are not announced. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <!-- Calls are optional; Seam still runs on devices without a phone radio. -->
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
 

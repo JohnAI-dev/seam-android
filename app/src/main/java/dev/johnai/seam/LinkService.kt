@@ -45,6 +45,10 @@ class LinkService : Service() {
         fileOutbox?.cancel(transfer)
     }
 
+    private var photoWatcher: PhotoWatcher? = null
+    private val onPhotoRequest: (String) -> Unit = { id -> photoWatcher?.onRequest(id) }
+    private val startPhotos: () -> Unit = { photoWatcher?.start() }
+
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) = reportBattery(intent, force = false)
     }
@@ -52,6 +56,7 @@ class LinkService : Service() {
     override fun onCreate() {
         super.onCreate()
         fileOutbox = FileOutbox(this, fileSends)
+        photoWatcher = PhotoWatcher(this, fileOutbox!!)
         PhoneFinder.onProcessStart(this)
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
@@ -68,6 +73,7 @@ class LinkService : Service() {
         LinkHub.onConnected = {
             registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
                 ?.let { reportBattery(it, force = true) }
+            photoWatcher?.onConnected()
         }
         registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         startUpdateChecks()
@@ -76,6 +82,9 @@ class LinkService : Service() {
         LinkHub.onStartCalls = startCalls
         LinkHub.onOutgoingFile = onOutgoingFile
         LinkHub.onCancelOutgoingFile = onCancelOutgoing
+        LinkHub.onPhotoRequest = onPhotoRequest
+        LinkHub.onStartPhotos = startPhotos
+        photoWatcher?.start()
         LinkHub.addListener(statusListener)
         LinkHub.start(this)
         // A permission grant does not redeliver onStartCommand; the activity calls this.
@@ -95,6 +104,9 @@ class LinkService : Service() {
         LinkHub.onStartCalls = startCalls
         LinkHub.onOutgoingFile = onOutgoingFile
         LinkHub.onCancelOutgoingFile = onCancelOutgoing
+        LinkHub.onPhotoRequest = onPhotoRequest
+        LinkHub.onStartPhotos = startPhotos
+        photoWatcher?.start()
         LinkHub.start(this)
         startCalls()
         return START_STICKY
@@ -211,6 +223,11 @@ class LinkService : Service() {
     }
 
     override fun onDestroy() {
+        try {
+            photoWatcher?.stop()
+        } catch (_: Exception) {
+        }
+        photoWatcher = null
         val dropped = try {
             fileSends.shutdownNow()
         } catch (_: Exception) {
@@ -225,6 +242,8 @@ class LinkService : Service() {
         if (LinkHub.onCancelOutgoingFile === onCancelOutgoing) LinkHub.onCancelOutgoingFile = null
         if (LinkHub.onStartCalls === startCalls) LinkHub.onStartCalls = null
         if (LinkHub.onCallAction === onCallAction) LinkHub.onCallAction = null
+        if (LinkHub.onPhotoRequest === onPhotoRequest) LinkHub.onPhotoRequest = null
+        if (LinkHub.onStartPhotos === startPhotos) LinkHub.onStartPhotos = null
         // Unmute a silenced ringer before the service is gone. Never leave it muted.
         callActions?.release()
         callMonitor.onLineState = null
