@@ -41,6 +41,12 @@ object Protocol {
     /** Longest side of a photo_new thumbnail, in pixels. */
     const val PHOTO_THUMB_SIDE = 256
 
+    /** app_icon PNG is at most 16 KiB. */
+    const val APP_ICON_MAX_BYTES = 16 * 1024
+
+    /** App icons are drawn into a square bitmap of this side, in pixels. */
+    const val APP_ICON_SIDE = 96
+
     /** reply_result error when the notification is no longer available. */
     const val REPLY_ERROR_GONE = "notification is gone"
 
@@ -104,6 +110,20 @@ object Protocol {
             .put("name", FileTransfer.sanitizeName(name))
             .put("taken", taken)
             .put("thumb", Base64.getEncoder().encodeToString(thumbJpeg))
+            .toString()
+    }
+
+    /**
+     * app_icon frame: base64 PNG of one app's icon.
+     * Null if [app] is empty or [png] is empty or larger than [APP_ICON_MAX_BYTES].
+     * Sent at most once per package per connection (protocol/PROTOCOL.md, "App icons").
+     */
+    fun appIcon(app: String, png: ByteArray): String? {
+        if (app.isEmpty() || png.isEmpty() || png.size > APP_ICON_MAX_BYTES) return null
+        return JSONObject()
+            .put("type", "app_icon")
+            .put("app", app)
+            .put("icon", Base64.getEncoder().encodeToString(png))
             .toString()
     }
 

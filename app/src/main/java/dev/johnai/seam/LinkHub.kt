@@ -165,6 +165,7 @@ object LinkHub {
         }
     }
 
+    /** Queue [line] on the connection outbox. No-op if the link is not running. */
     fun send(line: String) {
         client?.send(line)
     }

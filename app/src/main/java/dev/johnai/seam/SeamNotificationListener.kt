@@ -6,11 +6,18 @@ import android.app.PendingIntent
 import android.app.RemoteInput
 import android.content.Intent
 import android.content.pm.ApplicationInfo
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.os.Bundle
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import java.io.ByteArrayOutputStream
 
-/** Forwards the phone's notifications to the paired computer, and replies when the computer asks. */
+/**
+ * Forwards the phone's notifications to the paired computer, and replies when the computer asks.
+ * Before the first forwarded notification from a package on each connection, sends that app's icon
+ * on that same session. A reconnect retries both; the notification is not queued onto a later connection.
+ */
 @SuppressLint("StaticFieldLeak")
 class SeamNotificationListener : NotificationListenerService() {
 
@@ -36,7 +43,8 @@ class SeamNotificationListener : NotificationListenerService() {
         if (title.isBlank() && text.isBlank()) return
         val action = replyAction(sbn.notification)
         replies.remember(sbn.key, action)
-        LinkHub.send(
+        forwardWithAppIcon(
+            sbn.packageName,
             Protocol.notification(
                 id = sbn.key,
                 app = sbn.packageName,
@@ -45,7 +53,7 @@ class SeamNotificationListener : NotificationListenerService() {
                 text = text.take(4000),
                 time = sbn.postTime,
                 replyable = action != null,
-            )
+            ),
         )
     }
 
@@ -115,11 +123,104 @@ class SeamNotificationListener : NotificationListenerService() {
         }
     }
 
+    /**
+     * Icon and notification are one session-scoped send. Both frames are written
+     * with [LinkHub.sendOn] and the captured id, never [LinkHub.send] (that queue
+     * is drained onto whatever connection is live later). If the link reconnects
+     * while the icon is loaded, both are retried on the new id so the notification
+     * is not forwarded there without a preceding app_icon.
+     * A missing icon does not drop the notification, but only on the session that
+     * stayed current for the attempt.
+     */
+    private fun forwardWithAppIcon(packageName: String, notification: String) {
+        try {
+            appIcons.forwardWithIcon(
+                app = packageName,
+                notification = notification,
+                sessionNow = { LinkHub.currentSessionId() },
+                loadPng = { appIconPng(packageName) },
+                send = { sessionId, frame ->
+                    // Captured id only. sendOn(the live id) would put this frame on the next connection.
+                    if (!iconSendAllowed(sessionId, LinkHub.currentSessionId())) false
+                    else LinkHub.sendOn(sessionId, frame)
+                },
+            )
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Application icon as a 96×96 PNG of at most [Protocol.APP_ICON_MAX_BYTES]. */
+    private fun appIconPng(packageName: String): ByteArray? {
+        val drawable = try {
+            val icon = packageManager.getApplicationIcon(packageName)
+            try {
+                icon.mutate()
+            } catch (_: Exception) {
+                icon
+            }
+        } catch (_: Exception) {
+            return null
+        }
+        val side = Protocol.APP_ICON_SIDE
+        val bitmap = try {
+            Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888)
+        } catch (_: Exception) {
+            return null
+        }
+        try {
+            val canvas = Canvas(bitmap)
+            drawable.setBounds(0, 0, side, side)
+            drawable.draw(canvas)
+            return pngAtMost(bitmap, Protocol.APP_ICON_MAX_BYTES)
+        } catch (_: Exception) {
+            return null
+        } finally {
+            if (!bitmap.isRecycled) bitmap.recycle()
+        }
+    }
+
+    /**
+     * PNG of [source], scaled down until it fits in [maxBytes] or the bitmap is 1×1.
+     * PNG has no quality knob, so shrink means fewer pixels. Every side from
+     * [iconSidesToTry] is encoded; a short fixed cap can give up while the PNG
+     * is still over the limit. Does not recycle [source].
+     */
+    private fun pngAtMost(source: Bitmap, maxBytes: Int): ByteArray? {
+        var current = source
+        var owned: Bitmap? = null
+        try {
+            for (side in iconSidesToTry(maxOf(current.width, current.height))) {
+                if (current.width != side || current.height != side) {
+                    val scaled = Bitmap.createScaledBitmap(current, side, side, true)
+                    if (scaled !== current) {
+                        val previous = owned
+                        if (previous != null && previous !== source && previous !== scaled && !previous.isRecycled) {
+                            previous.recycle()
+                        }
+                        owned = if (scaled === source) null else scaled
+                        current = scaled
+                    }
+                }
+                val out = ByteArrayOutputStream()
+                if (!current.compress(Bitmap.CompressFormat.PNG, 100, out)) continue
+                val bytes = out.toByteArray()
+                if (bytes.isNotEmpty() && bytes.size <= maxBytes) return bytes
+            }
+            return null
+        } finally {
+            val extra = owned
+            if (extra != null && extra !== source && !extra.isRecycled) extra.recycle()
+        }
+    }
+
     companion object {
         /** Connected listener instance; dismiss requests are ignored while this is null. */
         @field:SuppressLint("StaticFieldLeak")
         @Volatile
         private var instance: SeamNotificationListener? = null
+
+        /** Packages whose icons were sent on the current link session. */
+        private val appIcons = AppIconLog()
 
         /** Cancel the notification the computer dismissed. No-op if the listener isn't connected. */
         fun dismiss(key: String) {
