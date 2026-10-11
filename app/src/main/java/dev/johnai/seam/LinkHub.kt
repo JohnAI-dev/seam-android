@@ -70,6 +70,7 @@ object LinkHub {
             onCallAction = { action -> performCallAction(action) },
             onPhotoRequest = { id -> performPhotoRequest(id) },
             onOpenUrl = { url -> showOpenLink(appContext, url) },
+            onDndSet = { on -> performDndSet(on) },
             onFile = { line ->
                 val outgoing = try {
                     onOutgoingFile?.invoke(line) == true
@@ -134,6 +135,12 @@ object LinkHub {
     @Volatile var onPhotoRequest: ((String) -> Unit)? = null
 
     /**
+     * The running link service registers this to apply a dnd_set from the computer.
+     * Null while the service is down.
+     */
+    @Volatile var onDndSet: ((Boolean) -> Unit)? = null
+
+    /**
      * Link service: true if [line] is a reply to an upload this phone started
      * (file_accept, file_reject, file_result, file_cancel). Incoming offers stay false.
      */
@@ -154,6 +161,14 @@ object LinkHub {
     fun performPhotoRequest(id: String) {
         try {
             onPhotoRequest?.invoke(id)
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Apply a dnd_set if the link service is running. */
+    fun performDndSet(on: Boolean) {
+        try {
+            onDndSet?.invoke(on)
         } catch (_: Exception) {
         }
     }

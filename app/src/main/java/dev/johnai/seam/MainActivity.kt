@@ -3,6 +3,7 @@ package dev.johnai.seam
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.NotificationManager
 import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Intent
@@ -30,6 +31,7 @@ class MainActivity : Activity() {
     private lateinit var notice: TextView
     private lateinit var paired: TextView
     private lateinit var notificationAccess: Button
+    private lateinit var dndAccess: Button
     private lateinit var calls: Button
     private lateinit var photos: Button
     private lateinit var background: Button
@@ -213,6 +215,7 @@ class MainActivity : Activity() {
         val hasAccess = hasNotificationAccess()
         notificationAccess.visibility = if (hasAccess) View.GONE else View.VISIBLE
         steps.visibility = if (hasAccess) View.GONE else View.VISIBLE
+        dndAccess.visibility = if (hasDndAccess()) View.GONE else View.VISIBLE
         calls.visibility = if (hasCallPermissions()) View.GONE else View.VISIBLE
         photos.visibility = if (PhotoAccess.granted(this)) View.GONE else View.VISIBLE
         val pm = getSystemService(PowerManager::class.java)
@@ -222,6 +225,10 @@ class MainActivity : Activity() {
         allowUpdates.visibility =
             if (packageManager.canRequestPackageInstalls()) View.GONE else View.VISIBLE
     }
+
+    /** Notification policy access: the computer may set Do Not Disturb only after this. */
+    private fun hasDndAccess(): Boolean =
+        getSystemService(NotificationManager::class.java)?.isNotificationPolicyAccessGranted == true
 
     /** Phone state, call log, and declining. Contacts is optional and only fills in a name. */
     private fun hasCallPermissions(): Boolean {
@@ -281,6 +288,10 @@ class MainActivity : Activity() {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
         column.addView(notificationAccess)
+        dndAccess = button(R.string.allow_silence) {
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
+        }
+        column.addView(dndAccess)
         calls = button(R.string.show_calls) {
             requestPermissions(
                 arrayOf(

@@ -12,6 +12,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.os.BatteryManager
+import android.os.Build
 import android.os.IBinder
 import java.io.InputStream
 import java.util.concurrent.Executors
@@ -48,9 +49,15 @@ class LinkService : Service() {
     private var photoWatcher: PhotoWatcher? = null
     private val onPhotoRequest: (String) -> Unit = { id -> photoWatcher?.onRequest(id) }
     private val startPhotos: () -> Unit = { photoWatcher?.start() }
+    private val onDndSet: (Boolean) -> Unit = { on -> applyDnd(on) }
 
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) = reportBattery(intent, force = false)
+    }
+
+    /** Interruption filter changed: tell the computer whether Do Not Disturb is on. */
+    private val dndReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) = reportDnd()
     }
 
     override fun onCreate() {
@@ -73,9 +80,11 @@ class LinkService : Service() {
         LinkHub.onConnected = {
             registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
                 ?.let { reportBattery(it, force = true) }
+            reportDnd()
             photoWatcher?.onConnected()
         }
         registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        registerDndReceiver()
         startUpdateChecks()
         callActions = CallActions(this)
         LinkHub.onCallAction = onCallAction
@@ -84,6 +93,7 @@ class LinkService : Service() {
         LinkHub.onCancelOutgoingFile = onCancelOutgoing
         LinkHub.onPhotoRequest = onPhotoRequest
         LinkHub.onStartPhotos = startPhotos
+        LinkHub.onDndSet = onDndSet
         photoWatcher?.start()
         LinkHub.addListener(statusListener)
         LinkHub.start(this)
@@ -106,6 +116,7 @@ class LinkService : Service() {
         LinkHub.onCancelOutgoingFile = onCancelOutgoing
         LinkHub.onPhotoRequest = onPhotoRequest
         LinkHub.onStartPhotos = startPhotos
+        LinkHub.onDndSet = onDndSet
         photoWatcher?.start()
         LinkHub.start(this)
         startCalls()
@@ -244,6 +255,7 @@ class LinkService : Service() {
         if (LinkHub.onCallAction === onCallAction) LinkHub.onCallAction = null
         if (LinkHub.onPhotoRequest === onPhotoRequest) LinkHub.onPhotoRequest = null
         if (LinkHub.onStartPhotos === startPhotos) LinkHub.onStartPhotos = null
+        if (LinkHub.onDndSet === onDndSet) LinkHub.onDndSet = null
         // Unmute a silenced ringer before the service is gone. Never leave it muted.
         callActions?.release()
         callMonitor.onLineState = null
@@ -253,11 +265,47 @@ class LinkService : Service() {
         updateThread = null
         LinkHub.removeListener(statusListener)
         unregisterReceiver(batteryReceiver)
+        unregisterReceiver(dndReceiver)
         LinkHub.onConnected = null
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun reportDnd() {
+        val nm = getSystemService(NotificationManager::class.java) ?: return
+        val on = try {
+            Dnd.isOn(nm.currentInterruptionFilter)
+        } catch (_: Exception) {
+            return
+        }
+        LinkHub.send(Protocol.dnd(on))
+    }
+
+    /** dnd_set: priority when on, all when off. Ignored without policy access. */
+    @SuppressLint("MissingPermission")
+    private fun applyDnd(on: Boolean) {
+        val nm = getSystemService(NotificationManager::class.java) ?: return
+        if (!nm.isNotificationPolicyAccessGranted) return
+        try {
+            nm.setInterruptionFilter(Dnd.filterFor(on))
+        } catch (_: Exception) {
+            return
+        }
+        reportDnd()
+    }
+
+    @SuppressLint("NewApi", "UnspecifiedRegisterReceiverFlag")
+    private fun registerDndReceiver() {
+        val filter = IntentFilter(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Re-read the filter, so a spoofed broadcast cannot lie. Exported so the
+            // system broadcast is delivered.
+            registerReceiver(dndReceiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            registerReceiver(dndReceiver, filter)
+        }
+    }
 
     private fun reportBattery(intent: Intent, force: Boolean) {
         val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
