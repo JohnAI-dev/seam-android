@@ -170,7 +170,8 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun savePairing(info: PairingInfo) {
+    /** Pair button. End-to-end tests call this instead of the confirmation dialog. */
+    internal fun savePairing(info: PairingInfo) {
         LinkHub.stopService(this)
         store.pairing = info
         LinkHub.startService(this)
