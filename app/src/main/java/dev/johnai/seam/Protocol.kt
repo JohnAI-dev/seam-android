@@ -17,6 +17,9 @@ object Protocol {
     /** At most 100 000 characters in a clipboard message. */
     const val CLIPBOARD_MAX_CHARS = 100_000
 
+    /** At most 4 096 characters in an open_url (protocol/PROTOCOL.md, "Opening links"). */
+    const val OPEN_URL_MAX_CHARS = 4_096
+
     /** At most 5 000 characters in a notification reply. */
     const val REPLY_MAX_CHARS = 5_000
 
@@ -124,6 +127,28 @@ object Protocol {
         if (msg.isNull("text")) return null
         val text = msg.opt("text") as? String ?: return null
         return text.take(CLIPBOARD_MAX_CHARS)
+    }
+
+    /**
+     * open_url frame, or null if [url] is not an http(s) URL of at most
+     * [OPEN_URL_MAX_CHARS] characters. javascript:, intent:, file: and any other
+     * scheme are not sent.
+     */
+    fun openUrl(url: String): String? {
+        val safe = LinkUrls.openableHttpUrl(url) ?: return null
+        return JSONObject().put("type", "open_url").put("url", safe).toString()
+    }
+
+    /**
+     * URL from an open_url frame, or null if it is not one or must be ignored
+     * (not http(s), too long, or not a URL).
+     */
+    fun parseOpenUrl(frame: String): String? {
+        val msg = parse(frame) ?: return null
+        if (msg.opt("type") != "open_url") return null
+        if (msg.isNull("url")) return null
+        val url = msg.opt("url") as? String ?: return null
+        return LinkUrls.openableHttpUrl(url)
     }
 
     /** Parse one frame; returns null for anything that isn't a JSON object with a type. */
