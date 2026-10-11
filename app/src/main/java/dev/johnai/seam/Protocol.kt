@@ -83,6 +83,21 @@ object Protocol {
         JSONObject().put("type", "battery").put("level", level.coerceIn(0, 100))
             .put("charging", charging).toString()
 
+    /** Do Not Disturb report (protocol/PROTOCOL.md, "Do Not Disturb"). */
+    fun dnd(on: Boolean): String =
+        JSONObject().put("type", "dnd").put("on", on).toString()
+
+    /**
+     * `on` from a dnd_set frame, or null if it is not a dnd_set or `on` is not a boolean.
+     * Null is ignored: the phone does not change Do Not Disturb.
+     */
+    fun parseDndSet(frame: String): Boolean? {
+        val msg = parse(frame) ?: return null
+        if (msg.opt("type") != "dnd_set") return null
+        if (!msg.has("on") || msg.isNull("on")) return null
+        return msg.opt("on") as? Boolean
+    }
+
     fun pong(): String = JSONObject().put("type", "pong").toString()
 
     /** Phone to computer call state. [number] and [name] are empty when unknown. */
