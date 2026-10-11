@@ -41,6 +41,7 @@ class LinkClient(
     private val onFile: (String) -> String? = { null },
     private val onCallAction: (String) -> Unit = {},
     private val onPhotoRequest: (String) -> Unit = {},
+    private val onOpenUrl: (String) -> Unit = {},
 ) {
     enum class State { CONNECTING, CONNECTED, DISCONNECTED, REJECTED }
 
@@ -253,6 +254,12 @@ class LinkClient(
                             "error" -> throw Rejected(msg.optString("message", "rejected"))
                             "dismiss" -> Protocol.dismissId(line)?.let(onDismiss)
                             "clipboard" -> Protocol.clipboardText(line)?.let(onClipboard)
+                            "open_url" -> Protocol.parseOpenUrl(line)?.let { url ->
+                                try {
+                                    onOpenUrl(url)
+                                } catch (_: Exception) {
+                                }
+                            }
                             "reply" -> {
                                 val req = Protocol.replyRequest(line)
                                 if (req != null && !conn.send(onReply(req.id, req.text))) break

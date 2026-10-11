@@ -22,6 +22,10 @@
     <string name="clipboard_sent">Sent to %1$s</string>
     <string name="clipboard_not_connected">Not connected</string>
     <string name="clipboard_nothing">Nothing on the clipboard.</string>
+    <string name="links_channel">Links</string>
+    <string name="links_channel_description">Links your computer asks to open on this phone</string>
+    <string name="open_link_title">Open link from %1$s?</string>
+    <string name="open_link_computer">your computer</string>
     <string name="forget">Forget this computer</string>
     <string name="updates_channel">App updates</string>
     <string name="update_ready">A new version of Seam is ready. Tap to install.</string>

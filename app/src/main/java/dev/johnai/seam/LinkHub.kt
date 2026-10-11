@@ -69,6 +69,7 @@ object LinkHub {
             },
             onCallAction = { action -> performCallAction(action) },
             onPhotoRequest = { id -> performPhotoRequest(id) },
+            onOpenUrl = { url -> showOpenLink(appContext, url) },
             onFile = { line ->
                 val outgoing = try {
                     onOutgoingFile?.invoke(line) == true
@@ -185,6 +186,38 @@ object LinkHub {
         send(Protocol.clipboard(text))
         return s.detail?.takeIf { it.isNotBlank() }
             ?: PairingStore(context).pairing?.name.orEmpty()
+    }
+
+    /**
+     * Queue an open_url if connected and [url] is http(s) within the protocol limit.
+     * Returns the computer name, or null if it was not sent.
+     */
+    fun sendOpenUrl(context: Context, url: String): String? {
+        val frame = Protocol.openUrl(url) ?: return null
+        val s = status
+        if (s.state != LinkClient.State.CONNECTED) return null
+        send(frame)
+        return s.detail?.takeIf { it.isNotBlank() }
+            ?: PairingStore(context).pairing?.name.orEmpty()
+    }
+
+    /** Notification only. The URL is opened later, if the person taps it. */
+    private fun showOpenLink(context: Context, url: String) {
+        val name = computerName(context)
+        main.post {
+            try {
+                OpenLinks.show(context, url, name)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private fun computerName(context: Context): String {
+        if (status.state == LinkClient.State.CONNECTED) {
+            status.detail?.takeIf { it.isNotBlank() }?.let { return it }
+        }
+        return PairingStore(context).pairing?.name?.takeIf { it.isNotBlank() }
+            ?: context.getString(R.string.open_link_computer)
     }
 
     /**

@@ -87,6 +87,15 @@
             </intent-filter>
         </activity>
 
+        <!-- Notification tap for open_url. Not exported; re-checks the URL, then ACTION_VIEW. -->
+        <activity
+            android:name=".OpenLinkActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay" />
+
         <activity
             android:name=".FoundActivity"
             android:exported="false"

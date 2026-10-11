@@ -15,6 +15,8 @@ import android.widget.Toast
 
 /**
  * Share target: Share to Seam sends text or files to the paired computer, then closes.
+ * A text/plain share that is a single http(s) URL is sent as open_url; other text
+ * still goes to the computer's clipboard (protocol/PROTOCOL.md, "Opening links").
  * Android will not let a background app read the clipboard, but a share intent can.
  * Files are described here (name and size via OpenableColumns). The link service opens an
  * InputStream with openInputStream or openTypedAssetFileDescriptor before onStartCommand
@@ -60,7 +62,9 @@ class ShareActivity : Activity() {
             }
         }
         LinkHub.startService(this)
-        val name = LinkHub.sendClipboard(this, text)
+        // A single http(s) URL is opened on the computer; any other text stays on its clipboard.
+        val url = LinkUrls.singleHttpUrl(text)
+        val name = if (url != null) LinkHub.sendOpenUrl(this, url) else LinkHub.sendClipboard(this, text)
         return if (name == null) getString(R.string.clipboard_not_connected)
         else getString(R.string.clipboard_sent, name)
     }
