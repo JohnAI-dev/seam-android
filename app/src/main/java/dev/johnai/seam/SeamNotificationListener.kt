@@ -27,11 +27,14 @@ class SeamNotificationListener : NotificationListenerService() {
     override fun onListenerConnected() {
         instance = this
         // Make sure the link is running whenever we're allowed to read notifications.
+        // The same access is what lets MediaSessionManager report and control playback.
         LinkHub.startService(this)
+        LinkHub.startNowPlaying()
     }
 
     override fun onListenerDisconnected() {
         if (instance === this) instance = null
+        LinkHub.mediaAccessLost()
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {

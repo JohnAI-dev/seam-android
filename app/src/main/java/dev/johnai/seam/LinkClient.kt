@@ -43,6 +43,7 @@ class LinkClient(
     private val onPhotoRequest: (String) -> Unit = {},
     private val onOpenUrl: (String) -> Unit = {},
     private val onDndSet: (Boolean) -> Unit = {},
+    private val onMediaControl: (String) -> Unit = {},
 ) {
     enum class State { CONNECTING, CONNECTED, DISCONNECTED, REJECTED }
 
@@ -270,6 +271,7 @@ class LinkClient(
                             "call_action" -> Protocol.callAction(line)?.let(onCallAction)
                             "photo_request" -> Protocol.parsePhotoRequest(line)?.let(onPhotoRequest)
                             "dnd_set" -> Protocol.parseDndSet(line)?.let(onDndSet)
+                            "media_control" -> Protocol.parseMediaControl(line)?.let(onMediaControl)
                             "file_offer", "file_accept", "file_reject", "file_chunk",
                             "file_done", "file_result", "file_cancel" -> {
                                 // Written here so file_accept goes out before the next frame is read.

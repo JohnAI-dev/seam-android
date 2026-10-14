@@ -5,7 +5,6 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.app.NotificationManager
 import android.content.ClipboardManager
-import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -80,6 +79,7 @@ class MainActivity : Activity() {
             LinkHub.startCallMonitor()
         }
         if (PhotoAccess.granted(this)) LinkHub.startRecentPhotos()
+        if (NotificationAccess.granted(this)) LinkHub.startNowPlaying()
         render()
     }
 
@@ -212,7 +212,7 @@ class MainActivity : Activity() {
             s.state == LinkClient.State.REJECTED -> getString(R.string.status_rejected_detail, s.detail ?: "")
             else -> getString(R.string.status_connecting)
         }
-        val hasAccess = hasNotificationAccess()
+        val hasAccess = NotificationAccess.granted(this)
         notificationAccess.visibility = if (hasAccess) View.GONE else View.VISIBLE
         steps.visibility = if (hasAccess) View.GONE else View.VISIBLE
         dndAccess.visibility = if (hasDndAccess()) View.GONE else View.VISIBLE
@@ -239,12 +239,6 @@ class MainActivity : Activity() {
         val decline = checkSelfPermission(Manifest.permission.ANSWER_PHONE_CALLS) ==
             PackageManager.PERMISSION_GRANTED
         return phone && log && decline
-    }
-
-    private fun hasNotificationAccess(): Boolean {
-        val enabled = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: return false
-        val me = ComponentName(this, SeamNotificationListener::class.java).flattenToString()
-        return enabled.split(":").any { it == me }
     }
 
     private fun buildLayout(): View {

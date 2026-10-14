@@ -112,6 +112,7 @@
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
 
+        <!-- Notification access also allows MediaSessionManager to read and control playback. -->
         <service
             android:name=".SeamNotificationListener"
             android:exported="true"

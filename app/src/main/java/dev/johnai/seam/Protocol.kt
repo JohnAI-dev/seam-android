@@ -47,6 +47,9 @@ object Protocol {
     /** App icons are drawn into a square bitmap of this side, in pixels. */
     const val APP_ICON_SIDE = 96
 
+    /** media artwork is a JPEG of at most 64 KiB (protocol/PROTOCOL.md, "Media"). */
+    const val MEDIA_ART_MAX_BYTES = 64 * 1024
+
     /** reply_result error when the notification is no longer available. */
     const val REPLY_ERROR_GONE = "notification is gone"
 
@@ -97,6 +100,18 @@ object Protocol {
         if (!msg.has("on") || msg.isNull("on")) return null
         return msg.opt("on") as? Boolean
     }
+
+    /** What's playing. Art that is not a small JPEG is left out. See [Media.frame]. */
+    fun media(snapshot: Media.Snapshot): String = Media.frame(snapshot)
+
+    /** Nothing is playing any more (protocol/PROTOCOL.md, "Media"). */
+    fun mediaStopped(): String = Media.stopped()
+
+    /**
+     * Action from a media_control frame, or null if it is not one or the action is unknown.
+     * Unknown actions are ignored.
+     */
+    fun parseMediaControl(frame: String): String? = Media.parseControl(frame)
 
     fun pong(): String = JSONObject().put("type", "pong").toString()
 

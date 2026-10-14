@@ -71,6 +71,7 @@ object LinkHub {
             onPhotoRequest = { id -> performPhotoRequest(id) },
             onOpenUrl = { url -> showOpenLink(appContext, url) },
             onDndSet = { on -> performDndSet(on) },
+            onMediaControl = { action -> performMediaControl(action) },
             onFile = { line ->
                 val outgoing = try {
                     onOutgoingFile?.invoke(line) == true
@@ -141,6 +142,24 @@ object LinkHub {
     @Volatile var onDndSet: ((Boolean) -> Unit)? = null
 
     /**
+     * The running link service registers this to play, pause, skip, or change volume
+     * when the computer sends media_control. Null while the service is down.
+     */
+    @Volatile var onMediaControl: ((String) -> Unit)? = null
+
+    /**
+     * The running link service registers this so granting notification access can start
+     * media-session watching without a process restart. Null while the service is down.
+     */
+    @Volatile var onStartMedia: (() -> Unit)? = null
+
+    /**
+     * The running link service registers this so losing notification access stops
+     * media-session watching. Null while the service is down.
+     */
+    @Volatile var onMediaAccessLost: (() -> Unit)? = null
+
+    /**
      * Link service: true if [line] is a reply to an upload this phone started
      * (file_accept, file_reject, file_result, file_cancel). Incoming offers stay false.
      */
@@ -169,6 +188,30 @@ object LinkHub {
     fun performDndSet(on: Boolean) {
         try {
             onDndSet?.invoke(on)
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Apply a media_control action if the link service is running. */
+    fun performMediaControl(action: String) {
+        try {
+            onMediaControl?.invoke(action)
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Start media-session watching if the link service is already running. */
+    fun startNowPlaying() {
+        try {
+            onStartMedia?.invoke()
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Notification access is gone: stop watching media sessions. */
+    fun mediaAccessLost() {
+        try {
+            onMediaAccessLost?.invoke()
         } catch (_: Exception) {
         }
     }
