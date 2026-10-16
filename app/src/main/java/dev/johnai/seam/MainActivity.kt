@@ -191,7 +191,7 @@ class MainActivity : Activity() {
         if (on && !NotificationAccess.granted(this)) {
             showMessage(getString(R.string.media_needs_notifications))
         }
-        LinkHub.startService(this)
+        if (on) LinkHub.startService(this)
         LinkHub.startNowPlaying()
         render()
     }
