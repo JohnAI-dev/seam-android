@@ -3,6 +3,7 @@ package dev.johnai.seam
 import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.Context
+import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.media.AudioManager
 import android.media.MediaMetadata
@@ -40,23 +41,140 @@ object NotificationAccess {
 }
 
 /**
+ * Whether the person turned on "what's playing". Missing or false stays off: notification
+ * access alone does not share media.
+ */
+object MediaShare {
+    fun enabled(stored: Boolean?): Boolean = stored == true
+
+    /** Watch sessions only when sharing is on and the notification listener is enabled. */
+    fun shouldWatch(optedIn: Boolean, listenerEnabled: Boolean): Boolean =
+        optedIn && listenerEnabled
+}
+
+/** `seam_media` / `share`. Default off. [setEnabled] uses commit so a service start sees it. */
+class MediaSharing(context: Context) {
+    private val prefs: SharedPreferences =
+        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    fun enabled(): Boolean =
+        MediaShare.enabled(if (prefs.contains(KEY)) prefs.getBoolean(KEY, false) else null)
+
+    fun setEnabled(on: Boolean): Boolean = prefs.edit().putBoolean(KEY, on).commit()
+
+    private companion object {
+        const val PREFS = "seam_media"
+        const val KEY = "share"
+    }
+}
+
+/**
+ * What to tell the computer about the session, without Android types.
+ *
+ * Sharing is opt-in. A control does not change the stored session. After welcome the phone
+ * sends the current session again, or `media_stopped` when it is not sharing. A malformed
+ * control is ignored. The desktop drops the session on disconnect, so this object keeps the
+ * last session and sends it again on the next welcome.
+ */
+class NowPlayingLogic(private val throttle: MediaThrottle = MediaThrottle()) {
+    var optedIn: Boolean = false
+        private set
+    var listenerEnabled: Boolean = false
+        private set
+    private var session: Media.Snapshot? = null
+
+    fun shouldWatch(): Boolean = MediaShare.shouldWatch(optedIn, listenerEnabled)
+
+    /** Session last reported while watching. A control does not change this. */
+    fun followedSession(): Media.Snapshot? = session
+
+    /**
+     * Apply the switch and the listener. Turning sharing off clears the session and, when
+     * [linkUp], sends `media_stopped`. Turning it on waits for [onSessions].
+     */
+    fun setAccess(
+        optedIn: Boolean,
+        listenerEnabled: Boolean,
+        linkUp: Boolean,
+        nowMs: Long,
+    ): MediaThrottle.Outcome {
+        val wasWatching = shouldWatch()
+        this.optedIn = optedIn
+        this.listenerEnabled = listenerEnabled
+        if (shouldWatch() || !wasWatching) return MediaThrottle.Outcome(null, null)
+        session = null
+        if (!linkUp) return MediaThrottle.Outcome(null, null)
+        return throttle.onUpdate(null, nowMs)
+    }
+
+    /**
+     * Right after welcome. Resets the once-per-second window so the current session is sent
+     * again. When not watching, sends `media_stopped` if [linkUp]. When watching, sends
+     * nothing: the caller must [onSessions] with the current session.
+     */
+    fun onWelcome(linkUp: Boolean, nowMs: Long): MediaThrottle.Outcome {
+        throttle.reset()
+        if (!linkUp || shouldWatch()) return MediaThrottle.Outcome(null, null)
+        session = null
+        return throttle.onUpdate(null, nowMs)
+    }
+
+    /**
+     * [picked] null means nothing left to follow. Ignored unless [shouldWatch]. Not sent
+     * unless [linkUp], so a frame is not queued onto the next connection.
+     */
+    fun onSessions(picked: Media.Snapshot?, linkUp: Boolean, nowMs: Long): MediaThrottle.Outcome {
+        if (!shouldWatch()) return MediaThrottle.Outcome(null, null)
+        session = picked
+        if (!linkUp) return MediaThrottle.Outcome(null, null)
+        return throttle.onUpdate(picked, nowMs)
+    }
+
+    /**
+     * Command for a known action, or null when sharing is off or [action] is unknown.
+     * [playing] defaults to the stored session. Does not change [followedSession].
+     */
+    fun onControl(action: String?, playing: Boolean? = null): Media.Command? {
+        if (!shouldWatch() || action == null) return null
+        return Media.command(action, playing ?: (session?.playing == true))
+    }
+
+    /** [onControl] for one frame. Malformed and unknown actions are null and leave the session. */
+    fun onControlFrame(frame: String): Media.Command? = onControl(Media.parseControl(frame))
+
+    fun flush(nowMs: Long): MediaThrottle.Outcome = throttle.flush(nowMs)
+
+    /** Service is going away. Does not change the saved opt-in. */
+    fun shutdown(linkUp: Boolean, nowMs: Long): MediaThrottle.Outcome {
+        val had = shouldWatch() || session != null
+        optedIn = false
+        listenerEnabled = false
+        session = null
+        if (!had || !linkUp) return MediaThrottle.Outcome(null, null)
+        return throttle.onUpdate(null, nowMs)
+    }
+}
+
+/**
  * Reports the active media session and applies media_control (protocol/PROTOCOL.md, "Media").
  *
- * Watching calls
+ * Sharing is a separate switch ([MediaSharing]), off until the person turns it on.
+ * Notification access is also required: watching calls
  * `MediaSessionManager.getActiveSessions(ComponentName(this, SeamNotificationListener::class.java))`
  * and [MediaSessionManager.addOnActiveSessionsChangedListener]. Both throw [SecurityException]
- * unless the notification listener is enabled, so they are not called until
- * [NotificationAccess.granted] is true, and a [SecurityException] drops the watch instead of
- * crashing the link. The listener's [SeamNotificationListener.onListenerConnected] starts the
- * watch; [SeamNotificationListener.onListenerDisconnected] stops it.
+ * unless that listener is enabled, so they are not called until [MediaShare.shouldWatch] is
+ * true, and a [SecurityException] drops the watch instead of crashing the link.
  *
  * The first playing session is followed, or the most recently updated session when none is
- * playing. No session left sends `media_stopped`. Metadata and playback changes are throttled
- * to one frame a second. Art is a JPEG of at most 64 KiB. The current state is sent on connect.
+ * playing. No session left sends `media_stopped`. A paused session is still `media`. Metadata
+ * and playback changes are throttled to one frame a second; the desktop moves the shown
+ * position on its own clock. Art is a JPEG of at most 64 KiB starting with FF D8. The current
+ * state is sent again right after welcome. Disconnect does not clear the local session.
  *
  * Volume actions use [AudioManager.adjustStreamVolume] on [AudioManager.STREAM_MUSIC] and do
  * not need a session. Transport actions no-op when there is nothing to follow. `toggle`
- * pauses only while the followed session is playing.
+ * pauses only while the followed session is playing. A control does not change the stored
+ * session; the next session callback does. Unknown and malformed controls are ignored.
  */
 @SuppressLint("MissingPermission")
 class NowPlaying(context: Context) {
@@ -65,14 +183,13 @@ class NowPlaying(context: Context) {
     private val work: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "seam-media").apply { isDaemon = true }
     }
-    private val throttle = MediaThrottle()
+    private val logic = NowPlayingLogic()
     private val publishGen = AtomicInteger()
 
     private var manager: MediaSessionManager? = null
     private var listenerComponent: ComponentName? = null
     private var registered = false
     private var followed: MediaController? = null
-    private var followedPlaying = false
     private var cachedArt: CachedArt? = null
     private var closed = false
 
@@ -86,58 +203,56 @@ class NowPlaying(context: Context) {
         }
 
         override fun onPlaybackStateChanged(state: PlaybackState?) {
-            followedPlaying = Media.isPlaying(state?.state ?: -1)
             requestPublish()
         }
 
         override fun onSessionDestroyed() {
             followed = null
-            followedPlaying = false
             refreshSessions()
         }
     }
 
     private val flushRunnable = Runnable {
-        if (closed || LinkHub.status.state != LinkClient.State.CONNECTED) return@Runnable
+        if (closed || !connected()) return@Runnable
         val now = SystemClock.elapsedRealtime()
-        val outcome = throttle.flush(now)
-        outcome.send?.let { LinkHub.send(it) }
-        arm(outcome.flushAtMs, now)
+        dispatch(logic.flush(now), now)
     }
 
-    /** Register the session listener when notification access is on. Idempotent. */
+    /**
+     * Match the share switch and notification access. Idempotent. Does not call
+     * MediaSessionManager unless both are on.
+     */
     fun start() {
         onMain {
             if (closed) return@onMain
-            if (!NotificationAccess.granted(app)) {
-                loseAccess()
+            val now = SystemClock.elapsedRealtime()
+            val outcome = logic.setAccess(
+                optedIn = MediaSharing(app).enabled(),
+                listenerEnabled = NotificationAccess.granted(app),
+                linkUp = connected(),
+                nowMs = now,
+            )
+            if (!logic.shouldWatch()) {
+                publishGen.incrementAndGet()
+                dropWatch()
+                dispatch(outcome, now)
                 return@onMain
             }
-            val component = ComponentName(app, SeamNotificationListener::class.java)
-            val msm = app.getSystemService(MediaSessionManager::class.java) ?: return@onMain
-            try {
-                if (!registered) {
-                    msm.addOnActiveSessionsChangedListener(sessionsListener, component, main)
-                    registered = true
-                    manager = msm
-                    listenerComponent = component
-                }
-                onSessions(msm.getActiveSessions(component))
-            } catch (_: SecurityException) {
-                loseAccess()
-            } catch (_: Exception) {
-            }
+            dispatch(outcome, now)
+            attach()
         }
     }
 
-    /** A new link: the computer needs the current session even if it has not changed. */
+    /** A new link: send the current session again, or media_stopped when not sharing. */
     fun onConnected() {
         onMain {
             if (closed) return@onMain
-            throttle.reset()
             main.removeCallbacks(flushRunnable)
             publishGen.incrementAndGet()
-            if (registered) refreshSessions() else report(null)
+            val now = SystemClock.elapsedRealtime()
+            dispatch(logic.onWelcome(linkUp = true, nowMs = now), now)
+            if (!logic.shouldWatch()) return@onMain
+            if (registered) refreshSessions() else attach()
         }
     }
 
@@ -145,20 +260,32 @@ class NowPlaying(context: Context) {
     fun onAccessLost() {
         onMain {
             if (closed) return@onMain
-            loseAccess()
+            val now = SystemClock.elapsedRealtime()
+            val outcome = logic.setAccess(
+                optedIn = logic.optedIn,
+                listenerEnabled = false,
+                linkUp = connected(),
+                nowMs = now,
+            )
+            publishGen.incrementAndGet()
+            dropWatch()
+            dispatch(outcome, now)
         }
     }
 
-    /** A media_control action from the computer. Unknown actions never arrive here. */
+    /**
+     * A media_control action from the computer. Unknown actions and sharing-off do nothing.
+     * The stored session is left for the next session callback.
+     */
     fun onControl(action: String) {
         onMain {
             if (closed) return@onMain
             val playing = try {
                 Media.isPlaying(followed?.playbackState?.state ?: -1)
             } catch (_: Exception) {
-                followedPlaying
+                logic.followedSession()?.playing == true
             }
-            val command = Media.command(action, playing) ?: return@onMain
+            val command = logic.onControl(action, playing) ?: return@onMain
             try {
                 apply(command)
             } catch (_: Exception) {
@@ -173,25 +300,50 @@ class NowPlaying(context: Context) {
             closed = true
             publishGen.incrementAndGet()
             main.removeCallbacks(flushRunnable)
-            val wasWatching = registered || followed != null
-            unregister()
-            clearFollowed()
+            val now = SystemClock.elapsedRealtime()
+            val outcome = logic.shutdown(connected(), now)
+            dropWatch()
             try {
                 work.shutdownNow()
             } catch (_: Exception) {
             }
-            if (wasWatching) report(null)
+            dispatch(outcome, now)
         }
     }
 
-    private fun loseAccess() {
-        val wasWatching = registered || followed != null
-        publishGen.incrementAndGet()
+    private fun attach() {
+        val component = ComponentName(app, SeamNotificationListener::class.java)
+        val msm = app.getSystemService(MediaSessionManager::class.java) ?: return
+        try {
+            if (!registered) {
+                msm.addOnActiveSessionsChangedListener(sessionsListener, component, main)
+                registered = true
+                manager = msm
+                listenerComponent = component
+            }
+            onSessions(msm.getActiveSessions(component))
+        } catch (_: SecurityException) {
+            val now = SystemClock.elapsedRealtime()
+            val outcome = logic.setAccess(
+                optedIn = logic.optedIn,
+                listenerEnabled = false,
+                linkUp = connected(),
+                nowMs = now,
+            )
+            publishGen.incrementAndGet()
+            dropWatch()
+            dispatch(outcome, now)
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun dropWatch() {
         unregister()
         clearFollowed()
         cachedArt = null
-        if (wasWatching || LinkHub.status.state == LinkClient.State.CONNECTED) report(null)
     }
+
+    private fun connected(): Boolean = LinkHub.status.state == LinkClient.State.CONNECTED
 
     private fun refreshSessions() {
         val msm = manager ?: return
@@ -200,7 +352,7 @@ class NowPlaying(context: Context) {
         try {
             onSessions(msm.getActiveSessions(component))
         } catch (_: SecurityException) {
-            loseAccess()
+            onAccessLost()
         } catch (_: Exception) {
         }
     }
@@ -234,11 +386,9 @@ class NowPlaying(context: Context) {
             }
         }
         followed = controller
-        followedPlaying = false
         if (controller == null) return
         try {
             controller.registerCallback(sessionCallback, main)
-            followedPlaying = Media.isPlaying(controller.playbackState?.state ?: -1)
         } catch (_: Exception) {
             followed = null
         }
@@ -247,7 +397,6 @@ class NowPlaying(context: Context) {
     private fun clearFollowed() {
         val current = followed
         followed = null
-        followedPlaying = false
         if (current == null) return
         try {
             current.unregisterCallback(sessionCallback)
@@ -325,11 +474,10 @@ class NowPlaying(context: Context) {
     }
 
     private fun read(controller: MediaController): Reading {
-        val pkg = controller.packageName.orEmpty().take(Media.TEXT_MAX_CHARS)
+        val pkg = Media.clipText(controller.packageName.orEmpty())
         val metadata = controller.metadata
         val state = controller.playbackState
         val playing = Media.isPlaying(state?.state ?: -1)
-        followedPlaying = playing
         val speed = state?.playbackSpeed?.takeIf { it.isFinite() } ?: 1f
         val duration = (metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L).coerceAtLeast(0L)
         val position = if (state == null) {
@@ -361,9 +509,11 @@ class NowPlaying(context: Context) {
     }
 
     private fun report(snapshot: Media.Snapshot?) {
-        if (LinkHub.status.state != LinkClient.State.CONNECTED) return
         val now = SystemClock.elapsedRealtime()
-        val outcome = throttle.onUpdate(snapshot, now)
+        dispatch(logic.onSessions(snapshot, connected(), now), now)
+    }
+
+    private fun dispatch(outcome: MediaThrottle.Outcome, now: Long) {
         outcome.send?.let { LinkHub.send(it) }
         arm(outcome.flushAtMs, now)
     }
@@ -404,15 +554,14 @@ class NowPlaying(context: Context) {
         if (packageName.isEmpty()) return ""
         return try {
             val pm = app.packageManager
-            pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
-                .take(Media.TEXT_MAX_CHARS)
+            Media.clipText(pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString())
         } catch (_: Exception) {
             packageName
         }
     }
 
     private fun text(metadata: MediaMetadata?, key: String): String =
-        metadata?.getString(key)?.take(Media.TEXT_MAX_CHARS).orEmpty()
+        Media.clipText(metadata?.getString(key).orEmpty())
 
     private fun artwork(metadata: MediaMetadata?): Bitmap? {
         if (metadata == null) return null

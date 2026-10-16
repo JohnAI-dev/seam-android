@@ -10,7 +10,9 @@ your notifications and battery status over Wi-Fi. **No USB debugging, no cable.*
   one-time key.
 - A foreground service keeps an encrypted connection (TLS 1.3, certificate pinned via the QR
   code, HMAC-authenticated) to the computer, and reconnects automatically.
-- A notification listener forwards notifications and what's playing; battery changes are sent as they happen. The same notification access is what allows media controls.
+- A notification listener forwards notifications; battery changes are sent as they happen.
+  What's playing is a separate switch, off until you turn it on. That also needs notification
+  access, which is what lets the phone see media sessions.
 
 Protocol: `protocol/PROTOCOL.md`, with test vectors shared with
 [seam-desktop](https://github.com/JohnAI-dev/seam-desktop) so both sides stay compatible.

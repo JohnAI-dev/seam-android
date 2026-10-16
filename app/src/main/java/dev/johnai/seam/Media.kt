@@ -26,7 +26,11 @@ object Media {
      */
     const val PLAYBACK_PLAYING = 3
 
-    /** Safety cap so a media line stays under the 1 MiB frame limit. The spec does not set one. */
+    /**
+     * Phone-side cap for `app`, `app_name`, `title`, `artist`, and `album`, in UTF-16 code
+     * units. The shared Media section does not set this. [clipText] never splits a surrogate
+     * pair, so a field may be one unit shorter than the cap.
+     */
     const val TEXT_MAX_CHARS = 4_000
 
     /** How far a paused position may drift before it counts as a seek. */
@@ -126,15 +130,30 @@ object Media {
         return abs(delta - expected) <= tolerance
     }
 
-    /** `media` frame. Art that is missing, not a JPEG, or larger than [ART_MAX_BYTES] is omitted. */
+    /**
+     * At most [maxChars] UTF-16 code units. If that cut would keep a high surrogate and drop
+     * its pair, the high surrogate is dropped too, so the result can be one unit shorter.
+     */
+    fun clipText(value: String, maxChars: Int = TEXT_MAX_CHARS): String {
+        if (maxChars <= 0 || value.isEmpty()) return ""
+        if (value.length <= maxChars) return value
+        var end = maxChars
+        if (value[end - 1].isHighSurrogate()) end -= 1
+        return if (end <= 0) "" else value.substring(0, end)
+    }
+
+    /**
+     * `media` frame. `playing` is always present. Missing or negative position and duration
+     * are 0. Art that is missing, not a JPEG (no `FF D8`), or larger than [ART_MAX_BYTES] is omitted.
+     */
     fun frame(snapshot: Snapshot): String {
         val o = JSONObject()
             .put("type", "media")
-            .put("app", snapshot.app.take(TEXT_MAX_CHARS))
-            .put("app_name", snapshot.appName.take(TEXT_MAX_CHARS))
-            .put("title", snapshot.title.take(TEXT_MAX_CHARS))
-            .put("artist", snapshot.artist.take(TEXT_MAX_CHARS))
-            .put("album", snapshot.album.take(TEXT_MAX_CHARS))
+            .put("app", clipText(snapshot.app))
+            .put("app_name", clipText(snapshot.appName))
+            .put("title", clipText(snapshot.title))
+            .put("artist", clipText(snapshot.artist))
+            .put("album", clipText(snapshot.album))
             .put("playing", snapshot.playing)
             .put("position_ms", snapshot.positionMs.coerceAtLeast(0L))
             .put("duration_ms", snapshot.durationMs.coerceAtLeast(0L))

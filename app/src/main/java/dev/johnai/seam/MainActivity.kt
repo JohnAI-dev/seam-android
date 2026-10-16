@@ -16,8 +16,10 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
+import android.widget.CompoundButton
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Switch
 import android.widget.TextView
 
 /**
@@ -30,6 +32,9 @@ class MainActivity : Activity() {
     private lateinit var notice: TextView
     private lateinit var paired: TextView
     private lateinit var notificationAccess: Button
+    private lateinit var mediaShare: Switch
+    private lateinit var mediaNeedsNotifications: TextView
+    private var renderingMediaShare = false
     private lateinit var dndAccess: Button
     private lateinit var calls: Button
     private lateinit var photos: Button
@@ -79,7 +84,7 @@ class MainActivity : Activity() {
             LinkHub.startCallMonitor()
         }
         if (PhotoAccess.granted(this)) LinkHub.startRecentPhotos()
-        if (NotificationAccess.granted(this)) LinkHub.startNowPlaying()
+        LinkHub.startNowPlaying()
         render()
     }
 
@@ -181,6 +186,16 @@ class MainActivity : Activity() {
         render()
     }
 
+    private fun onMediaShareChanged(on: Boolean) {
+        MediaSharing(this).setEnabled(on)
+        if (on && !NotificationAccess.granted(this)) {
+            showMessage(getString(R.string.media_needs_notifications))
+        }
+        LinkHub.startService(this)
+        LinkHub.startNowPlaying()
+        render()
+    }
+
     private fun showMessage(text: String) {
         notice.text = text
         notice.visibility = View.VISIBLE
@@ -215,6 +230,11 @@ class MainActivity : Activity() {
         val hasAccess = NotificationAccess.granted(this)
         notificationAccess.visibility = if (hasAccess) View.GONE else View.VISIBLE
         steps.visibility = if (hasAccess) View.GONE else View.VISIBLE
+        renderingMediaShare = true
+        mediaShare.isChecked = MediaSharing(this).enabled()
+        renderingMediaShare = false
+        mediaNeedsNotifications.visibility =
+            if (mediaShare.isChecked && !hasAccess) View.VISIBLE else View.GONE
         dndAccess.visibility = if (hasDndAccess()) View.GONE else View.VISIBLE
         calls.visibility = if (hasCallPermissions()) View.GONE else View.VISIBLE
         photos.visibility = if (PhotoAccess.granted(this)) View.GONE else View.VISIBLE
@@ -282,6 +302,28 @@ class MainActivity : Activity() {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
         column.addView(notificationAccess)
+        column.addView(TextView(this).apply {
+            text = getString(R.string.media_share_hint)
+            setPadding(0, dp(16), 0, dp(4))
+        })
+        mediaShare = Switch(this).apply {
+            tag = "media_share"
+            text = getString(R.string.show_media)
+            setOnCheckedChangeListener { _: CompoundButton, checked: Boolean ->
+                if (!renderingMediaShare) onMediaShareChanged(checked)
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(8) }
+        }
+        column.addView(mediaShare)
+        mediaNeedsNotifications = TextView(this).apply {
+            tag = "media_needs_notifications"
+            text = getString(R.string.media_needs_notifications)
+            visibility = View.GONE
+            setPadding(0, dp(8), 0, 0)
+        }
+        column.addView(mediaNeedsNotifications)
         dndAccess = button(R.string.allow_silence) {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
         }

@@ -67,6 +67,21 @@ class MediaTest {
     }
 
     @Test
+    fun textClipDoesNotSplitASurrogatePair() {
+        val pair = "\uD83D\uDE00"
+        assertEquals(2, pair.length)
+        val value = "x".repeat(Media.TEXT_MAX_CHARS - 1) + pair
+        val clipped = Media.clipText(value)
+        assertEquals(Media.TEXT_MAX_CHARS - 1, clipped.length)
+        assertFalse(clipped.last().isHighSurrogate())
+        assertEquals("x".repeat(Media.TEXT_MAX_CHARS - 1), clipped)
+        val title = JSONObject(Media.frame(snap(title = value))).getString("title")
+        assertEquals(clipped, title)
+        assertEquals("", Media.clipText(pair, maxChars = 1))
+        assertEquals(pair, Media.clipText(pair, maxChars = 2))
+    }
+
+    @Test
     fun negativePositionAndDurationAreSentAsZero() {
         val json = JSONObject(Media.frame(snap(positionMs = -20, durationMs = -1)))
         assertEquals(0L, json.getLong("position_ms"))
