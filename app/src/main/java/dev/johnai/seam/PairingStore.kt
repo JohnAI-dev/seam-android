@@ -45,6 +45,8 @@ class PairingStore(context: Context) {
                     .putString("key", value.keyB64)
                     .putString("name", value.name)
             }
-            e.commit()
+            // apply, not commit: MainActivity writes pairing on the UI thread (save and forget).
+            // The in-memory value is updated before startService reads it.
+            e.apply()
         }
 }

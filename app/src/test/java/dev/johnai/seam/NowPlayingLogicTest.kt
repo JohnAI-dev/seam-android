@@ -31,6 +31,8 @@ class NowPlayingLogicTest {
         assertNull(logic.onSessions(snap(playing = true, title = "Hidden"), linkUp = true, nowMs = 0).send)
         assertNull(logic.followedSession())
         assertNull(logic.onControl("pause"))
+        assertNull(logic.onControl("volume_up"))
+        assertNull(logic.onControl("volume_down"))
     }
 
     @Test

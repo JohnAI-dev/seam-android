@@ -52,7 +52,11 @@ object MediaShare {
         optedIn && listenerEnabled
 }
 
-/** `seam_media` / `share`. Default off. [setEnabled] uses commit so a service start sees it. */
+/**
+ * `seam_media` / `share`. Default off.
+ * [setEnabled] uses [SharedPreferences.Editor.apply] because the switch runs on the UI thread.
+ * The in-memory value is updated before [LinkHub.startNowPlaying] reads it.
+ */
 class MediaSharing(context: Context) {
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -60,7 +64,9 @@ class MediaSharing(context: Context) {
     fun enabled(): Boolean =
         MediaShare.enabled(if (prefs.contains(KEY)) prefs.getBoolean(KEY, false) else null)
 
-    fun setEnabled(on: Boolean): Boolean = prefs.edit().putBoolean(KEY, on).commit()
+    fun setEnabled(on: Boolean) {
+        prefs.edit().putBoolean(KEY, on).apply()
+    }
 
     private companion object {
         const val PREFS = "seam_media"
@@ -109,8 +115,10 @@ class NowPlayingLogic(private val throttle: MediaThrottle = MediaThrottle()) {
 
     /**
      * Right after welcome. Resets the once-per-second window so the current session is sent
-     * again. When not watching, sends `media_stopped` if [linkUp]. When watching, sends
-     * nothing: the caller must [onSessions] with the current session.
+     * again. When sharing is off this still sends `media_stopped` on every connect ([linkUp]):
+     * the spec says the phone sends `media` or `media_stopped` after welcome, so the desktop
+     * does not keep a session from the previous connection. When watching, sends nothing:
+     * the caller must [onSessions] with the current session.
      */
     fun onWelcome(linkUp: Boolean, nowMs: Long): MediaThrottle.Outcome {
         throttle.reset()
@@ -132,7 +140,10 @@ class NowPlayingLogic(private val throttle: MediaThrottle = MediaThrottle()) {
 
     /**
      * Command for a known action, or null when sharing is off or [action] is unknown.
-     * [playing] defaults to the stored session. Does not change [followedSession].
+     * Volume is included: `volume_up` and `volume_down` from the computer do nothing while
+     * the switch is off. That is intentional — the switch covers controls, not only the
+     * now-playing report. [playing] defaults to the stored session. Does not change
+     * [followedSession].
      */
     fun onControl(action: String?, playing: Boolean? = null): Media.Command? {
         if (!shouldWatch() || action == null) return null
@@ -172,7 +183,8 @@ class NowPlayingLogic(private val throttle: MediaThrottle = MediaThrottle()) {
  * state is sent again right after welcome. Disconnect does not clear the local session.
  *
  * Volume actions use [AudioManager.adjustStreamVolume] on [AudioManager.STREAM_MUSIC] and do
- * not need a session. Transport actions no-op when there is nothing to follow. `toggle`
+ * not need a session, but they are ignored while sharing is off, same as play and skip.
+ * Transport actions no-op when there is nothing to follow. `toggle`
  * pauses only while the followed session is playing. A control does not change the stored
  * session; the next session callback does. Unknown and malformed controls are ignored.
  */
