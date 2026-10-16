@@ -12,6 +12,9 @@
     <string name="status_rejected">The computer refused the connection. Pair again.</string>
     <string name="status_rejected_detail">The computer refused the connection: %1$s</string>
     <string name="notification_access_steps">To show your notifications on your computer, Seam needs notification access. If Android says the setting is restricted: open Settings → Apps → Seam → ⋮ → Allow restricted settings, then try again.</string>
+    <string name="show_media">Show what\'s playing on the computer</string>
+    <string name="media_share_hint">Off until you turn this on. Seam then tells the computer the track and accepts play, pause, skip, and volume.</string>
+    <string name="media_needs_notifications">What\'s playing stays on this phone until notification access is allowed. That access is what lets Seam see media sessions.</string>
     <string name="allow_notifications">Allow notification access</string>
     <string name="allow_silence">Allow the computer to silence this phone</string>
     <string name="show_calls">Show calls on computer</string>

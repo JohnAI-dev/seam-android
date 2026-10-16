@@ -50,6 +50,10 @@ class LinkService : Service() {
     private val onPhotoRequest: (String) -> Unit = { id -> photoWatcher?.onRequest(id) }
     private val startPhotos: () -> Unit = { photoWatcher?.start() }
     private val onDndSet: (Boolean) -> Unit = { on -> applyDnd(on) }
+    private var nowPlaying: NowPlaying? = null
+    private val onMediaControl: (String) -> Unit = { action -> nowPlaying?.onControl(action) }
+    private val startMedia: () -> Unit = { nowPlaying?.start() }
+    private val mediaAccessLost: () -> Unit = { nowPlaying?.onAccessLost() }
 
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) = reportBattery(intent, force = false)
@@ -64,6 +68,7 @@ class LinkService : Service() {
         super.onCreate()
         fileOutbox = FileOutbox(this, fileSends)
         photoWatcher = PhotoWatcher(this, fileOutbox!!)
+        nowPlaying = NowPlaying(this)
         PhoneFinder.onProcessStart(this)
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
@@ -82,6 +87,7 @@ class LinkService : Service() {
                 ?.let { reportBattery(it, force = true) }
             reportDnd()
             photoWatcher?.onConnected()
+            nowPlaying?.onConnected()
         }
         registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         registerDndReceiver()
@@ -94,7 +100,11 @@ class LinkService : Service() {
         LinkHub.onPhotoRequest = onPhotoRequest
         LinkHub.onStartPhotos = startPhotos
         LinkHub.onDndSet = onDndSet
+        LinkHub.onMediaControl = onMediaControl
+        LinkHub.onStartMedia = startMedia
+        LinkHub.onMediaAccessLost = mediaAccessLost
         photoWatcher?.start()
+        nowPlaying?.start()
         LinkHub.addListener(statusListener)
         LinkHub.start(this)
         // A permission grant does not redeliver onStartCommand; the activity calls this.
@@ -117,7 +127,11 @@ class LinkService : Service() {
         LinkHub.onPhotoRequest = onPhotoRequest
         LinkHub.onStartPhotos = startPhotos
         LinkHub.onDndSet = onDndSet
+        LinkHub.onMediaControl = onMediaControl
+        LinkHub.onStartMedia = startMedia
+        LinkHub.onMediaAccessLost = mediaAccessLost
         photoWatcher?.start()
+        nowPlaying?.start()
         LinkHub.start(this)
         startCalls()
         return START_STICKY
@@ -256,6 +270,14 @@ class LinkService : Service() {
         if (LinkHub.onPhotoRequest === onPhotoRequest) LinkHub.onPhotoRequest = null
         if (LinkHub.onStartPhotos === startPhotos) LinkHub.onStartPhotos = null
         if (LinkHub.onDndSet === onDndSet) LinkHub.onDndSet = null
+        try {
+            nowPlaying?.stop()
+        } catch (_: Exception) {
+        }
+        nowPlaying = null
+        if (LinkHub.onMediaControl === onMediaControl) LinkHub.onMediaControl = null
+        if (LinkHub.onStartMedia === startMedia) LinkHub.onStartMedia = null
+        if (LinkHub.onMediaAccessLost === mediaAccessLost) LinkHub.onMediaAccessLost = null
         // Unmute a silenced ringer before the service is gone. Never leave it muted.
         callActions?.release()
         callMonitor.onLineState = null

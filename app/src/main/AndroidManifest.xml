@@ -112,6 +112,7 @@
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
 
+        <!-- MediaSessionManager needs this listener. Sharing what's playing is still opt-in. -->
         <service
             android:name=".SeamNotificationListener"
             android:exported="true"
